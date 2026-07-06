@@ -1,32 +1,48 @@
-resource "aws_cloudwatch_log_group" "elasticache_logs" {
-  name              = "elasticache_logs"
-  retention_in_days = 7
+resource "aws_elasticache_serverless_cache" "serverless_cache" {
+  engine = "valkey"
+  name   = "example"
+
+  cache_usage_limits {
+    data_storage {
+      maximum = 10
+      unit    = "GB"
+    }
+    ecpu_per_second {
+      maximum = 5000
+    }
+  }
+
+  daily_snapshot_time      = "09:00"
+  description              = "ElastiCache Valkey serverless cache"
+  major_engine_version     = "7"
+  snapshot_retention_limit = 7
+
+  security_group_ids = [aws_security_group.elasticache_sg.id]
+  subnet_ids         = var.private_subnet_ids
+
+}
+
+resource "aws_security_group" "elasticache_sg" {
+  name        = "elasticache-sg"
+  description = "ElastiCache Valkey - allow access from app tier only"
+  vpc_id      = var.vpc_id
+
+  ingress {
+    from_port       = 6379
+    to_port         = 6379
+    protocol        = "tcp"
+    #security_groups = [var.app_security_group_id]
+    description     = "Valkey access from app tier"
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 
   tags = {
-    Name = "elasticache-logs"
-  }
-}
-
-resource "aws_elasticache_subnet_group" "this" {
-  name       = "elasticache-subnet-group"
-  subnet_ids = var.private_subnet_ids
-}
-
-
-resource "aws_elasticache_cluster" "redis" {
-  cluster_id        = "mycluster"
-  engine            = "redis"
-  node_type         = "cache.t3.micro"
-  num_cache_nodes   = 1
-  port              = 6379
-  apply_immediately = true
-  ip_discovery      = "ipv4"
-  network_type      = "ipv4"
-  subnet_group_name = aws_elasticache_subnet_group.this.name
-  log_delivery_configuration {
-    destination      = aws_cloudwatch_log_group.elasticache_logs.name
-    destination_type = "cloudwatch-logs"
-    log_format       = "text"
-    log_type         = "slow-log"
+    Name = "elasticache-sg"
   }
 }

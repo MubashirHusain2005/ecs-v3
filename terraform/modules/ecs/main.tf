@@ -36,22 +36,36 @@ resource "aws_ecs_cluster" "ecsv3_cluster" {
 
 ###Security Group
 
-resource "aws_security_group" "ecs_tasks" {
-  name_prefix = "dashboard-api-sg"
+#Traffic to ECS Containers must come from ALB on port 8080
+
+resource "aws_security_group" "ecs" {
+  name        = "ecs-sg"
+  description = "security group for the ecs services"
   vpc_id      = var.vpc_id
 
+  ingress {
+    description     = "Allow traffic from ALB on 8080"
+    from_port       = 8080
+    to_port         = 8080
+    protocol        = var.protocol
+    security_groups = [aws_security_group.alb_sg.id]
+  }
+
+  ingress {
+    from_port   = 9000
+    to_port     = 9001
+    protocol    = "tcp"
+    self = true
+    security_groups = [aws_security_group.alb_sg.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 }
-
-resource "aws_vpc_security_group_ingress_rule" "https" {
-  security_group_id = aws_security_group.ecs_tasks.id
-
-  ip_protocol = "tcp"
-  from_port   = 443
-  to_port     = 443
-  cidr_ipv4   = "0.0.0.0/0"
-}
-
-
 
 
 ###CloudMap Namespace
@@ -239,7 +253,7 @@ resource "aws_ecs_task_definition" "dashboard_api_task" {
       secrets = [
         {
           name  = "DATABASE_URL"
-          value = var.dashboard_db_url_secret_arn
+          value = "${var.dashboard_db_url_secret_arn}:url::"
 
         },
 

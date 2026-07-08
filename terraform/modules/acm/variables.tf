@@ -13,32 +13,9 @@ variable "alb_dns_name" {
   type = string
 }
 
-variable "alb_zone_id" {
+variable "alb_zone" {
   type = string
 }
-
-variable "domain_validation_options" {
-
-  type = list(object({
-
-    domain_name = string
-
-    resource_record_name = string
-
-    resource_record_value = string
-
-    resource_record_type = string
-
-  }))
-
-  default = []
-
-}
-
-variable "certificate_arn" {
-  type = string
-}
-
 
 variable "record_type" {
   type    = string
@@ -46,6 +23,12 @@ variable "record_type" {
 }
 
 variable "health" {
-  type    = string
-  default = "true"
+  type    = bool
+  default = true
 }
+
+variable "valid_method" {
+  type    = string
+  default = "DNS"
+}
+

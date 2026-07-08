@@ -28,11 +28,11 @@ resource "aws_security_group" "elasticache_sg" {
   vpc_id      = var.vpc_id
 
   ingress {
-    from_port       = 6379
-    to_port         = 6379
-    protocol        = "tcp"
+    from_port = 6379
+    to_port   = 6379
+    protocol  = "tcp"
     #security_groups = [var.app_security_group_id]
-    description     = "Valkey access from app tier"
+    description = "Valkey access from app tier"
   }
 
   egress {

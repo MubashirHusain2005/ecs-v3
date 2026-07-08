@@ -12,7 +12,7 @@ resource "aws_route53_record" "MS" {
 
   alias {
     name                   = var.alb_dns_name
-    zone_id                = var.alb_zone_id
+    zone_id                = var.alb_zone
     evaluate_target_health = var.health
   }
 }
@@ -25,7 +25,7 @@ resource "aws_route53_record" "apex" {
 
   alias {
     name                   = var.alb_dns_name
-    zone_id                = var.alb_zone_id
+    zone_id                = var.alb_zone
     evaluate_target_health = var.health
   }
 }
@@ -56,7 +56,7 @@ resource "aws_route53_record" "cert_validation_record" {
   }
 
   allow_overwrite = true
-  zone_id         = data.aws_route53_zone.primary.zone_id
+  zone_id         = data.aws_route53_zone.primary.id
   name            = each.value.name
   type            = each.value.type
   ttl             = 60

@@ -1,3 +1,5 @@
+##Add health checks to Microservices
+
 data "aws_kms_key" "kms_key" {
   key_id = "alias/kms-ecr"
 }
@@ -6,32 +8,25 @@ data "aws_secretsmanager_secret" "api_gateway_secret" {
   name = "JWT_SECRET"
 }
 
-##Need one for each service
-resource "aws_cloudwatch_log_group" "ecs_logs" {
-  name              = "/ecs/my-ecs-task"
-  retention_in_days = 7
-
-  tags = {
-    Name = "ecs-task-logs"
-  }
-}
 
 ##ECS Cluster
 resource "aws_ecs_cluster" "ecsv3_cluster" {
   name = "ecs-cluster"
 
-  configuration {
-    execute_command_configuration {
-      kms_key_id = data.aws_kms_key.kms_key.arn
-      logging    = "OVERRIDE"
+    setting {
+        name = "containerInsights"
+        value =  "enabled"
+     }
 
-      log_configuration {
-        cloud_watch_encryption_enabled = true
-        cloud_watch_log_group_name     = aws_cloudwatch_log_group.ecs_logs.name
+     configuration {
+      execute_command_configuration {
+        kms_key_id = data.aws_kms_key.kms_key.arn
+        logging = "OVERRIDE"
       }
+     }
     }
-  }
-}
+  
+
 
 
 ###Security Group
@@ -48,15 +43,15 @@ resource "aws_security_group" "ecs" {
     from_port       = 8080
     to_port         = 8080
     protocol        = var.protocol
-    security_groups = [aws_security_group.alb_sg.id]
+    security_groups = [var.alb_sg]
   }
 
   ingress {
-    from_port   = 9000
-    to_port     = 9001
-    protocol    = "tcp"
-    self = true
-    security_groups = [aws_security_group.alb_sg.id]
+    from_port       = 9000
+    to_port         = 9001
+    protocol        = "tcp"
+    self            = true
+    security_groups = [var.alb_sg]
   }
 
   egress {
@@ -65,13 +60,28 @@ resource "aws_security_group" "ecs" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
+
+  egress {
+    from_port       = 443
+    to_port         = 443
+    protocol        = "-1"
+    security_groups = [var.vpce_sg]
+  }
 }
 
+resource "aws_cloudwatch_log_group" "api_gateway" {
+  name              = "/ecs/api-gateway"
+  retention_in_days = 7
+
+  tags = {
+    Name = "api-gateway-logs"
+  }
+}
 
 ###CloudMap Namespace
 
 resource "aws_service_discovery_private_dns_namespace" "private" {
-  name        = "${var.environment}.internal"
+  name        = "services.local"
   description = "Private dns namespace for service discovery"
   vpc         = var.vpc_id
 }
@@ -99,14 +109,14 @@ resource "aws_service_discovery_service" "api_gateway" {
 ##Api-gateway Task
 resource "aws_ecs_task_definition" "api_gateway_task" {
 
-  depends_on               = [aws_cloudwatch_log_group.ecs_logs]
+  depends_on               = [aws_cloudwatch_log_group.api_gateway]
   family                   = "service"
   network_mode             = var.network_mode
   requires_compatibilities = ["FARGATE"]
   cpu                      = var.fargate_cpu
   memory                   = var.memory
-  execution_role_arn       = var.execution_role_arn
-  task_role_arn            = var.task_role_arn
+  execution_role_arn       = var.ecs_task_execution_role
+  task_role_arn            = var.ecs_task_role
 
   runtime_platform {
     operating_system_family = "LINUX"
@@ -136,20 +146,20 @@ resource "aws_ecs_task_definition" "api_gateway_task" {
 
       environment = [
 
-        { name = "REDIS_URL", value = "redis://${var.redis_url}:6379/0" },
+        { name = "REDIS_URL", value = "redis://${var.redis_endpoint}:6379/0" },
         { name = "ORDER_SERVICE_URL", value = "http://order-service.${aws_service_discovery_private_dns_namespace.private.name}:8081" },
-        { name = "API_INVENTORY_SERVICE_URL", value = "http://inventory-service.${aws_service_discovery_private_dns_namespace.private.name}:8082" },
-        { name = "API_PAYMENTS_SERVICE_URL", value = "http://payment-service.${aws_service_discovery_private_dns_namespace.private.name}:8083" },
-        { name = "API_NOTIFICATIONS_SERVICE_URL", value = "http://notification-service.${aws_service_discovery_private_dns_namespace.private.name}:8084" },
-        { name = "API_SHIPPING_SERVICE_URL", value = "http://shipping-service.${aws_service_discovery_private_dns_namespace.private.name}:8085" },
-        { name = "API_DASHBOARD_SERVICE_URL", value = "http://dashboard-api.${aws_service_discovery_private_dns_namespace.private.name}:8086" },
+        { name = "INVENTORY_SERVICE_URL", value = "http://inventory-service.${aws_service_discovery_private_dns_namespace.private.name}:8082" },
+        { name = "PAYMENT_SERVICE_URL", value = "http://payment-service.${aws_service_discovery_private_dns_namespace.private.name}:8083" },
+        { name = "NOTIFICATION_SERVICE_URL", value = "http://notification-service.${aws_service_discovery_private_dns_namespace.private.name}:8084" },
+        { name = "SHIPPING_SERVICE_URL", value = "http://shipping-service.${aws_service_discovery_private_dns_namespace.private.name}:8085" },
+        { name = "DASHBOARD_SERVICE_URL", value = "http://dashboard-api.${aws_service_discovery_private_dns_namespace.private.name}:8086" },
 
       ]
 
       logConfiguration = {
         logDriver = "awslogs"
         options = {
-          awslogs-group         = "/ecs/my-ecs-task"
+          awslogs-group         = "/ecs/api-gateway"
           awslogs-region        = "eu-west-2"
           awslogs-stream-prefix = "ecs"
         }
@@ -170,12 +180,12 @@ resource "aws_ecs_service" "api_gateway_service" {
 
   network_configuration {
     subnets          = var.private_subnet_ids
-    security_groups  = [var.ecs_sg]
+    security_groups  = [aws_security_group.ecs.id]
     assign_public_ip = false
   }
 
   load_balancer {
-    target_group_arn = var.alb_target_grp_arn
+    target_group_arn = var.api_gateway_tg
     container_name   = var.api_task_name
     container_port   = var.container_port
   }
@@ -195,20 +205,27 @@ resource "aws_ecs_service" "api_gateway_service" {
 
 
 
-##################################################################
+#######
+resource "aws_cloudwatch_log_group" "dashboard_api" {
+  name              = "/ecs/dashboard-api"
+  retention_in_days = 7
 
+  tags = {
+    Name = "api-gateway-logs"
+  }
+}
 
 ##CloudMap Namespace Service
 
-resource "aws_service_discovery_service" "dashboard_api_gateway" {
-  name = "api-gateway"
+resource "aws_service_discovery_service" "dashboard_api" {
+  name = "dashboard-gateway"
 
   dns_config {
     namespace_id = aws_service_discovery_private_dns_namespace.private.id
 
     dns_records {
       ttl  = 10
-      type = A
+      type = "A"
     }
 
     routing_policy = "MULTIVALUE"
@@ -222,14 +239,14 @@ resource "aws_service_discovery_service" "dashboard_api_gateway" {
 ##dashboard-api Task
 resource "aws_ecs_task_definition" "dashboard_api_task" {
 
-  depends_on               = [aws_cloudwatch_log_group.ecs_logs]
+  depends_on               = [aws_cloudwatch_log_group.dashboard_api]
   family                   = "service"
   network_mode             = var.network_mode
   requires_compatibilities = ["FARGATE"]
   cpu                      = var.fargate_cpu
   memory                   = var.memory
-  execution_role_arn       = var.execution_role_arn
-  task_role_arn            = var.task_role_arn
+  execution_role_arn       = var.ecs_task_execution_role
+  task_role_arn            = var.ecs_task_role
 
   runtime_platform {
     operating_system_family = "LINUX"
@@ -252,8 +269,8 @@ resource "aws_ecs_task_definition" "dashboard_api_task" {
 
       secrets = [
         {
-          name  = "DATABASE_URL"
-          value = "${var.dashboard_db_url_secret_arn}:url::"
+          name      = "DATABASE_URL"
+          valueFrom = "${var.dashboard_db_url_secret_arn}:url::"
 
         },
 
@@ -262,7 +279,7 @@ resource "aws_ecs_task_definition" "dashboard_api_task" {
       logConfiguration = {
         logDriver = "awslogs"
         options = {
-          awslogs-group         = "/ecs/my-ecs-task"
+          awslogs-group         = "/ecs/dashboard-api"
           awslogs-region        = "eu-west-2"
           awslogs-stream-prefix = "ecs"
         }
@@ -272,36 +289,36 @@ resource "aws_ecs_task_definition" "dashboard_api_task" {
 
 }
 
-##Api-gateway service
+##dashboard service
 resource "aws_ecs_service" "dashboard_api_service" {
   name             = "dashboard_api_service"
   cluster          = aws_ecs_cluster.ecsv3_cluster.id
-  task_definition  = aws_ecs_task_definition.api_gateway_task.arn
+  task_definition  = aws_ecs_task_definition.dashboard_api_task.arn
   desired_count    = var.desired_count
   launch_type      = var.launch_type
   platform_version = "LATEST"
 
   network_configuration {
     subnets          = var.private_subnet_ids
-    security_groups  = [var.ecs_sg]
+    security_groups  = [aws_security_group.ecs.id]
     assign_public_ip = false
   }
 
   load_balancer {
-    target_group_arn = var.alb_target_grp_arn
+    target_group_arn = var.dashboard_api_tg
     container_name   = var.api_task_name
     container_port   = var.container_port
   }
 
   service_registries {
-    registry_arn   = aws_service_discovery_service.api_gateway.arn
+    registry_arn   = aws_service_discovery_service.dashboard_api.arn
     container_name = "dashboard_api"
 
   }
 
   depends_on = [
     aws_ecs_cluster.ecsv3_cluster,
-    aws_ecs_task_definition.api_gateway_task
+    aws_ecs_task_definition.dashboard_api_task
 
   ]
 }
@@ -309,17 +326,26 @@ resource "aws_ecs_service" "dashboard_api_service" {
 
 ##############################################
 
+resource "aws_cloudwatch_log_group" "inventory" {
+  name              = "/ecs/inventory"
+  retention_in_days = 7
+
+  tags = {
+    Name = "inventory-logs"
+  }
+}
+
 ##CloudMap Namespace Service Inventory
 
 resource "aws_service_discovery_service" "inventory_service" {
-  name = "api-gateway"
+  name = "inventory-service"
 
   dns_config {
-    namespace_id = [aws_service_discovery_private_dns_namespace.private.id]
+    namespace_id = aws_service_discovery_private_dns_namespace.private.id
 
     dns_records {
       ttl  = 10
-      type = A
+      type = "A"
     }
 
     routing_policy = "MULTIVALUE"
@@ -333,14 +359,14 @@ resource "aws_service_discovery_service" "inventory_service" {
 ##Inventory Task
 resource "aws_ecs_task_definition" "inventory_task" {
 
-  depends_on               = [aws_cloudwatch_log_group.ecs_logs]
+  depends_on               = [aws_cloudwatch_log_group.inventory]
   family                   = "service"
   network_mode             = var.network_mode
   requires_compatibilities = ["FARGATE"]
   cpu                      = var.fargate_cpu
   memory                   = var.memory
-  execution_role_arn       = var.execution_role_arn
-  task_role_arn            = var.task_role_arn
+  execution_role_arn       = var.ecs_task_execution_role
+  task_role_arn            = var.ecs_task_role
 
   runtime_platform {
     operating_system_family = "LINUX"
@@ -350,7 +376,7 @@ resource "aws_ecs_task_definition" "inventory_task" {
   container_definitions = jsonencode([
     {
       name      = "inventory-service"
-      image     = "125474112898.dkr.ecr.eu-west-2.amazonaws.com/inventory_service:v1"
+      image     = var.inventory_image
       essential = true
 
       portMappings = [
@@ -363,8 +389,8 @@ resource "aws_ecs_task_definition" "inventory_task" {
 
       secrets = [
         {
-          name  = "DATABASE_URL"
-          value = "${var.dashboard_db_url_secret_arn}:url::"
+          name      = "DATABASE_URL"
+          valueFrom = "${var.dashboard_db_url_secret_arn}:url::"
 
         },
 
@@ -373,7 +399,7 @@ resource "aws_ecs_task_definition" "inventory_task" {
       logConfiguration = {
         logDriver = "awslogs"
         options = {
-          awslogs-group         = "/ecs/my-ecs-task"
+          awslogs-group         = "/ecs/inventory"
           awslogs-region        = "eu-west-2"
           awslogs-stream-prefix = "ecs"
         }
@@ -394,14 +420,8 @@ resource "aws_ecs_service" "inventory_service" {
 
   network_configuration {
     subnets          = var.private_subnet_ids
-    security_groups  = [var.ecs_sg]
+    security_groups  = [aws_security_group.ecs.id]
     assign_public_ip = false
-  }
-
-  load_balancer {
-    target_group_arn = var.alb_target_grp_arn
-    container_name   = var.api_task_name
-    container_port   = var.container_port
   }
 
   service_registries {
@@ -412,7 +432,7 @@ resource "aws_ecs_service" "inventory_service" {
 
   depends_on = [
     aws_ecs_cluster.ecsv3_cluster,
-    aws_ecs_task_definition.api_gateway_task
+    aws_ecs_task_definition.inventory_task
 
   ]
 }
@@ -420,15 +440,26 @@ resource "aws_ecs_service" "inventory_service" {
 
 ###########Notification Service
 
+resource "aws_cloudwatch_log_group" "notification" {
+  name              = "/ecs/notification"
+  retention_in_days = 7
+
+  tags = {
+    Name = "notification-logs"
+  }
+}
+
+
+
 resource "aws_service_discovery_service" "notification_service" {
   name = "notification-service"
 
   dns_config {
-    namespace_id = [aws_service_discovery_private_dns_namespace.private.id]
+    namespace_id = aws_service_discovery_private_dns_namespace.private.id
 
     dns_records {
       ttl  = 10
-      type = A
+      type = "A"
     }
 
     routing_policy = "MULTIVALUE"
@@ -442,14 +473,14 @@ resource "aws_service_discovery_service" "notification_service" {
 ##Notification Task
 resource "aws_ecs_task_definition" "notification_task" {
 
-  depends_on               = [aws_cloudwatch_log_group.ecs_logs]
+  depends_on               = [aws_cloudwatch_log_group.notification]
   family                   = "service"
   network_mode             = var.network_mode
   requires_compatibilities = ["FARGATE"]
   cpu                      = var.fargate_cpu
   memory                   = var.memory
-  execution_role_arn       = var.execution_role_arn
-  task_role_arn            = var.task_role_arn
+  execution_role_arn       = var.ecs_task_execution_role
+  task_role_arn            = var.ecs_task_role
 
   runtime_platform {
     operating_system_family = "LINUX"
@@ -459,7 +490,7 @@ resource "aws_ecs_task_definition" "notification_task" {
   container_definitions = jsonencode([
     {
       name      = "notification-service"
-      image     = "125474112898.dkr.ecr.eu-west-2.amazonaws.com/notification_service:v1"
+      image     = var.notification_image
       essential = true
 
       portMappings = [
@@ -472,8 +503,8 @@ resource "aws_ecs_task_definition" "notification_task" {
 
       secrets = [
         {
-          name  = "DATABASE_URL"
-          value = "${var.dashboard_db_url_secret_arn}:url::"
+          name      = "DATABASE_URL"
+          valueFrom = "${var.dashboard_db_url_secret_arn}:url::"
 
         },
 
@@ -482,7 +513,7 @@ resource "aws_ecs_task_definition" "notification_task" {
       logConfiguration = {
         logDriver = "awslogs"
         options = {
-          awslogs-group         = "/ecs/my-ecs-task"
+          awslogs-group         = "/ecs/notification"
           awslogs-region        = "eu-west-2"
           awslogs-stream-prefix = "ecs"
         }
@@ -503,25 +534,19 @@ resource "aws_ecs_service" "notification_service" {
 
   network_configuration {
     subnets          = var.private_subnet_ids
-    security_groups  = [var.ecs_sg]
+    security_groups  = [aws_security_group.ecs.id]
     assign_public_ip = false
   }
 
-  load_balancer {
-    target_group_arn = var.alb_target_grp_arn
-    container_name   = var.api_task_name
-    container_port   = var.container_port
-  }
-
   service_registries {
-    registry_arn   = [aws_service_discovery_service.inventory_service.arn]
-    container_name = "inventory_service"
+    registry_arn   = aws_service_discovery_service.notification_service.arn
+    container_name = "notification_service"
 
   }
 
   depends_on = [
     aws_ecs_cluster.ecsv3_cluster,
-    aws_ecs_task_definition.api_gateway_task
+    aws_ecs_task_definition.notification_task
 
   ]
 }
@@ -529,16 +554,25 @@ resource "aws_ecs_service" "notification_service" {
 
 ######Order Service
 
+resource "aws_cloudwatch_log_group" "order" {
+  name              = "/ecs/order"
+  retention_in_days = 7
+
+  tags = {
+    Name = "order-logs"
+  }
+}
+
 
 resource "aws_service_discovery_service" "order_service" {
   name = "order-service"
 
   dns_config {
-    namespace_id = [aws_service_discovery_private_dns_namespace.private.id]
+    namespace_id = aws_service_discovery_private_dns_namespace.private.id
 
     dns_records {
       ttl  = 10
-      type = A
+      type = "A"
     }
 
     routing_policy = "MULTIVALUE"
@@ -552,14 +586,14 @@ resource "aws_service_discovery_service" "order_service" {
 ##Order Task
 resource "aws_ecs_task_definition" "order_task" {
 
-  depends_on               = [aws_cloudwatch_log_group.ecs_logs]
+  depends_on               = [aws_cloudwatch_log_group.order]
   family                   = "service"
   network_mode             = var.network_mode
   requires_compatibilities = ["FARGATE"]
   cpu                      = var.fargate_cpu
   memory                   = var.memory
-  execution_role_arn       = var.execution_role_arn
-  task_role_arn            = var.task_role_arn
+  execution_role_arn       = var.ecs_task_execution_role
+  task_role_arn            = var.ecs_task_role
 
   runtime_platform {
     operating_system_family = "LINUX"
@@ -569,7 +603,7 @@ resource "aws_ecs_task_definition" "order_task" {
   container_definitions = jsonencode([
     {
       name      = "order-service"
-      image     = "125474112898.dkr.ecr.eu-west-2.amazonaws.com/order_service:v1"
+      image     = var.order_image
       essential = true
 
       portMappings = [
@@ -589,8 +623,8 @@ resource "aws_ecs_task_definition" "order_task" {
 
       secrets = [
         {
-          name  = "DATABASE_URL"
-          value = "${var.dashboard_db_url_secret_arn}:url::"
+          name      = "DATABASE_URL"
+          valueFrom = "${var.dashboard_db_url_secret_arn}:url::"
 
         },
 
@@ -599,7 +633,7 @@ resource "aws_ecs_task_definition" "order_task" {
       logConfiguration = {
         logDriver = "awslogs"
         options = {
-          awslogs-group         = "/ecs/my-ecs-task"
+          awslogs-group         = "/ecs/order"
           awslogs-region        = "eu-west-2"
           awslogs-stream-prefix = "ecs"
         }
@@ -611,7 +645,7 @@ resource "aws_ecs_task_definition" "order_task" {
 
 ##Order service
 resource "aws_ecs_service" "order_service" {
-  name             = "dashboard_api_service"
+  name             = "order_service"
   cluster          = aws_ecs_cluster.ecsv3_cluster.id
   task_definition  = aws_ecs_task_definition.order_task.arn
   desired_count    = var.desired_count
@@ -620,43 +654,45 @@ resource "aws_ecs_service" "order_service" {
 
   network_configuration {
     subnets          = var.private_subnet_ids
-    security_groups  = [var.ecs_sg]
+    security_groups  = [aws_security_group.ecs.id]
     assign_public_ip = false
   }
 
-  load_balancer {
-    target_group_arn = var.alb_target_grp_arn
-    container_name   = var.api_task_name
-    container_port   = var.container_port
-  }
-
   service_registries {
-    registry_arn   = [aws_service_discovery_service.inventory_service.arn]
-    container_name = "inventory_service"
+    registry_arn   = aws_service_discovery_service.order_service.arn
+    container_name = "order_service"
 
   }
 
   depends_on = [
     aws_ecs_cluster.ecsv3_cluster,
-    aws_ecs_task_definition.api_gateway_task
+    aws_ecs_task_definition.order_task.arn
 
   ]
 }
 
 
-
-
 ##Payment Service
+
+resource "aws_cloudwatch_log_group" "payment" {
+  name              = "/ecs/payment"
+  retention_in_days = 7
+
+  tags = {
+    Name = "payment-logs"
+  }
+}
+
 
 resource "aws_service_discovery_service" "payment_service" {
   name = "payment-service"
 
   dns_config {
-    namespace_id = [aws_service_discovery_private_dns_namespace.private.id]
+    namespace_id = aws_service_discovery_private_dns_namespace.private.id
 
     dns_records {
       ttl  = 10
-      type = A
+      type = "A"
     }
 
     routing_policy = "MULTIVALUE"
@@ -670,14 +706,14 @@ resource "aws_service_discovery_service" "payment_service" {
 ##Payment Task
 resource "aws_ecs_task_definition" "payment_task" {
 
-  depends_on               = [aws_cloudwatch_log_group.ecs_logs]
+  depends_on               = [aws_cloudwatch_log_group.payment]
   family                   = "service"
   network_mode             = var.network_mode
   requires_compatibilities = ["FARGATE"]
   cpu                      = var.fargate_cpu
   memory                   = var.memory
-  execution_role_arn       = var.execution_role_arn
-  task_role_arn            = var.task_role_arn
+  execution_role_arn       = var.ecs_task_execution_role
+  task_role_arn            = var.ecs_task_role
 
   runtime_platform {
     operating_system_family = "LINUX"
@@ -686,8 +722,8 @@ resource "aws_ecs_task_definition" "payment_task" {
 
   container_definitions = jsonencode([
     {
-      name      = "order-service"
-      image     = "125474112898.dkr.ecr.eu-west-2.amazonaws.com/order_service:v1"
+      name      = "payment-service"
+      image     = "125474112898.dkr.ecr.eu-west-2.amazonaws.com/payment_service:v1"
       essential = true
 
       portMappings = [
@@ -707,8 +743,8 @@ resource "aws_ecs_task_definition" "payment_task" {
 
       secrets = [
         {
-          name  = "DATABASE_URL"
-          value = "${var.dashboard_db_url_secret_arn}:url::"
+          name      = "DATABASE_URL"
+          valueFrom = "${var.dashboard_db_url_secret_arn}:url::"
 
         },
 
@@ -717,7 +753,7 @@ resource "aws_ecs_task_definition" "payment_task" {
       logConfiguration = {
         logDriver = "awslogs"
         options = {
-          awslogs-group         = "/ecs/my-ecs-task"
+          awslogs-group         = "/ecs/payment"
           awslogs-region        = "eu-west-2"
           awslogs-stream-prefix = "ecs"
         }
@@ -738,25 +774,19 @@ resource "aws_ecs_service" "payment_api_service" {
 
   network_configuration {
     subnets          = var.private_subnet_ids
-    security_groups  = [var.ecs_sg]
+    security_groups  = [aws_security_group.ecs.id]
     assign_public_ip = false
   }
 
-  load_balancer {
-    target_group_arn = var.alb_target_grp_arn
-    container_name   = var.api_task_name
-    container_port   = var.container_port
-  }
-
   service_registries {
-    registry_arn   = [aws_service_discovery_service.inventory_service.arn]
+    registry_arn   = aws_service_discovery_service.payment_service.arn
     container_name = "payment_service"
 
   }
 
   depends_on = [
     aws_ecs_cluster.ecsv3_cluster,
-    aws_ecs_task_definition.api_gateway_task
+    aws_ecs_task_definition.payment_task.arn
 
   ]
 }
@@ -765,16 +795,25 @@ resource "aws_ecs_service" "payment_api_service" {
 
 ###Scheduler
 
+resource "aws_cloudwatch_log_group" "scheduler" {
+  name              = "/ecs/scheduler"
+  retention_in_days = 7
+
+  tags = {
+    Name = "scheduler-logs"
+  }
+}
+
 
 resource "aws_service_discovery_service" "scheduler_service" {
   name = "scheduler-service"
 
   dns_config {
-    namespace_id = [aws_service_discovery_private_dns_namespace.private.id]
+    namespace_id = aws_service_discovery_private_dns_namespace.private.id
 
     dns_records {
       ttl  = 10
-      type = A
+      type = "A"
     }
 
     routing_policy = "MULTIVALUE"
@@ -788,14 +827,14 @@ resource "aws_service_discovery_service" "scheduler_service" {
 ##Scheduler Task
 resource "aws_ecs_task_definition" "scheduler_task" {
 
-  depends_on               = [aws_cloudwatch_log_group.ecs_logs]
+  depends_on               = [aws_cloudwatch_log_group.scheduler]
   family                   = "service"
   network_mode             = var.network_mode
   requires_compatibilities = ["FARGATE"]
   cpu                      = var.fargate_cpu
   memory                   = var.memory
-  execution_role_arn       = var.execution_role_arn
-  task_role_arn            = var.task_role_arn
+  execution_role_arn       = var.ecs_task_execution_role
+  task_role_arn            = var.ecs_task_role
 
   runtime_platform {
     operating_system_family = "LINUX"
@@ -804,8 +843,8 @@ resource "aws_ecs_task_definition" "scheduler_task" {
 
   container_definitions = jsonencode([
     {
-      name      = "order-service"
-      image     = "125474112898.dkr.ecr.eu-west-2.amazonaws.com/scheduler_service:v1"
+      name      = "scheduler-service"
+      image     = var.scheduler_image
       essential = true
 
       portMappings = [
@@ -818,8 +857,8 @@ resource "aws_ecs_task_definition" "scheduler_task" {
 
       secrets = [
         {
-          name  = "DATABASE_URL"
-          value = "${var.dashboard_db_url_secret_arn}:url::"
+          name      = "DATABASE_URL"
+          valueFrom = "${var.dashboard_db_url_secret_arn}:url::"
 
         },
 
@@ -828,7 +867,7 @@ resource "aws_ecs_task_definition" "scheduler_task" {
       logConfiguration = {
         logDriver = "awslogs"
         options = {
-          awslogs-group         = "/ecs/my-ecs-task"
+          awslogs-group         = "/ecs/scheduler"
           awslogs-region        = "eu-west-2"
           awslogs-stream-prefix = "ecs"
         }
@@ -839,8 +878,9 @@ resource "aws_ecs_task_definition" "scheduler_task" {
 }
 
 ##Scheduler  service
+
 resource "aws_ecs_service" "scheduler_service" {
-  name             = "payment_service"
+  name             = "scheduler_service"
   cluster          = aws_ecs_cluster.ecsv3_cluster.id
   task_definition  = aws_ecs_task_definition.scheduler_task.arn
   desired_count    = var.desired_count
@@ -849,40 +889,44 @@ resource "aws_ecs_service" "scheduler_service" {
 
   network_configuration {
     subnets          = var.private_subnet_ids
-    security_groups  = [var.ecs_sg]
+    security_groups  = [aws_security_group.ecs.id]
     assign_public_ip = false
   }
 
-  load_balancer {
-    target_group_arn = var.alb_target_grp_arn
-    container_name   = var.api_task_name
-    container_port   = var.container_port
-  }
-
   service_registries {
-    registry_arn   = [aws_service_discovery_service.inventory_service.arn]
-    container_name = "schduler_service"
+    registry_arn   = aws_service_discovery_service.scheduler_service.arn
+    container_name = "scheduler_service"
 
   }
 
   depends_on = [
     aws_ecs_cluster.ecsv3_cluster,
-    aws_ecs_task_definition.api_gateway_task
+    aws_ecs_task_definition.scheduler_task
 
   ]
 }
 
 ####  Shipping
 
+resource "aws_cloudwatch_log_group" "shipping" {
+  name              = "/ecs/shipping"
+  retention_in_days = 7
+
+  tags = {
+    Name = "scheduler-logs"
+  }
+}
+
+
 resource "aws_service_discovery_service" "shipping_service" {
   name = "shipping-service"
 
   dns_config {
-    namespace_id = [aws_service_discovery_private_dns_namespace.private.id]
+    namespace_id = aws_service_discovery_private_dns_namespace.private.id
 
     dns_records {
       ttl  = 10
-      type = A
+      type = "A"
     }
 
     routing_policy = "MULTIVALUE"
@@ -896,14 +940,14 @@ resource "aws_service_discovery_service" "shipping_service" {
 ##Shipping Task
 resource "aws_ecs_task_definition" "shipping_task" {
 
-  depends_on               = [aws_cloudwatch_log_group.ecs_logs]
+  depends_on               = [aws_cloudwatch_log_group.shipping]
   family                   = "service"
   network_mode             = var.network_mode
   requires_compatibilities = ["FARGATE"]
   cpu                      = var.fargate_cpu
   memory                   = var.memory
-  execution_role_arn       = var.execution_role_arn
-  task_role_arn            = var.task_role_arn
+  execution_role_arn       = var.ecs_task_execution_role
+  task_role_arn            = var.ecs_task_role
 
   runtime_platform {
     operating_system_family = "LINUX"
@@ -913,7 +957,7 @@ resource "aws_ecs_task_definition" "shipping_task" {
   container_definitions = jsonencode([
     {
       name      = "shipping-service"
-      image     = "125474112898.dkr.ecr.eu-west-2.amazonaws.com/shipping_service:v1"
+      image     = var.shipping_image
       essential = true
 
       portMappings = [
@@ -932,8 +976,8 @@ resource "aws_ecs_task_definition" "shipping_task" {
       ]
       secrets = [
         {
-          name  = "DATABASE_URL"
-          value = "${var.dashboard_db_url_secret_arn}:url::"
+          name      = "DATABASE_URL"
+          valueFrom = "${var.dashboard_db_url_secret_arn}:url::"
 
         },
 
@@ -942,7 +986,7 @@ resource "aws_ecs_task_definition" "shipping_task" {
       logConfiguration = {
         logDriver = "awslogs"
         options = {
-          awslogs-group         = "/ecs/my-ecs-task"
+          awslogs-group         = "/ecs/shipping"
           awslogs-region        = "eu-west-2"
           awslogs-stream-prefix = "ecs"
         }
@@ -954,7 +998,7 @@ resource "aws_ecs_task_definition" "shipping_task" {
 
 ##Shipping  service
 resource "aws_ecs_service" "shipping_service" {
-  name             = "payment_service"
+  name             = "shipping_service"
   cluster          = aws_ecs_cluster.ecsv3_cluster.id
   task_definition  = aws_ecs_task_definition.shipping_task.arn
   desired_count    = var.desired_count
@@ -963,41 +1007,43 @@ resource "aws_ecs_service" "shipping_service" {
 
   network_configuration {
     subnets          = var.private_subnet_ids
-    security_groups  = [var.ecs_sg]
+    security_groups  = [aws_security_group.ecs.id]
     assign_public_ip = false
   }
 
-  load_balancer {
-    target_group_arn = var.alb_target_grp_arn
-    container_name   = var.api_task_name
-    container_port   = var.container_port
-  }
-
   service_registries {
-    registry_arn   = [aws_service_discovery_service.inventory_service.arn]
+    registry_arn   = aws_service_discovery_service.shipping_service.arn
     container_name = "shipping_service"
 
   }
 
   depends_on = [
     aws_ecs_cluster.ecsv3_cluster,
-    aws_ecs_task_definition.api_gateway_task
+    aws_ecs_task_definition.shipping_task.arn
 
   ]
 }
 
 #############Worker 
 
+resource "aws_cloudwatch_log_group" "worker" {
+  name              = "/ecs/worker"
+  retention_in_days = 7
+
+  tags = {
+    Name = "worker-logs"
+  }
+}
 
 resource "aws_service_discovery_service" "worker_service" {
-  name = "shipping-service"
+  name = "worker-service"
 
   dns_config {
-    namespace_id = [aws_service_discovery_private_dns_namespace.private.id]
+    namespace_id = aws_service_discovery_private_dns_namespace.private.id
 
     dns_records {
       ttl  = 10
-      type = A
+      type = "A"
     }
 
     routing_policy = "MULTIVALUE"
@@ -1011,14 +1057,14 @@ resource "aws_service_discovery_service" "worker_service" {
 ##Worker Task
 resource "aws_ecs_task_definition" "worker_task" {
 
-  depends_on               = [aws_cloudwatch_log_group.ecs_logs]
+  depends_on               = [aws_cloudwatch_log_group.worker]
   family                   = "service"
   network_mode             = var.network_mode
   requires_compatibilities = ["FARGATE"]
   cpu                      = var.fargate_cpu
   memory                   = var.memory
-  execution_role_arn       = var.execution_role_arn
-  task_role_arn            = var.task_role_arn
+  execution_role_arn       = var.ecs_task_execution_role
+  task_role_arn            = var.ecs_task_role
 
   runtime_platform {
     operating_system_family = "LINUX"
@@ -1028,7 +1074,7 @@ resource "aws_ecs_task_definition" "worker_task" {
   container_definitions = jsonencode([
     {
       name      = "worker-service"
-      image     = "125474112898.dkr.ecr.eu-west-2.amazonaws.com/worker_service:v1"
+      image     = var.worker_image
       essential = true
 
       portMappings = [
@@ -1047,8 +1093,8 @@ resource "aws_ecs_task_definition" "worker_task" {
       ]
       secrets = [
         {
-          name  = "DATABASE_URL"
-          value = "${var.dashboard_db_url_secret_arn}:url::"
+          name      = "DATABASE_URL"
+          valueFrom = "${var.dashboard_db_url_secret_arn}:url::"
 
         },
 
@@ -1057,7 +1103,7 @@ resource "aws_ecs_task_definition" "worker_task" {
       logConfiguration = {
         logDriver = "awslogs"
         options = {
-          awslogs-group         = "/ecs/my-ecs-task"
+          awslogs-group         = "/ecs/worker"
           awslogs-region        = "eu-west-2"
           awslogs-stream-prefix = "ecs"
         }
@@ -1078,25 +1124,19 @@ resource "aws_ecs_service" "worker_service" {
 
   network_configuration {
     subnets          = var.private_subnet_ids
-    security_groups  = [var.ecs_sg]
+    security_groups  = [aws_security_group.ecs.id]
     assign_public_ip = false
   }
 
-  load_balancer {
-    target_group_arn = var.alb_target_grp_arn
-    container_name   = var.api_task_name
-    container_port   = var.container_port
-  }
-
   service_registries {
-    registry_arn   = [aws_service_discovery_service.inventory_service.arn]
+    registry_arn   = aws_service_discovery_service.worker_service.arn
     container_name = "worker_service"
 
   }
 
   depends_on = [
     aws_ecs_cluster.ecsv3_cluster,
-    aws_ecs_task_definition.api_gateway_task
+    aws_ecs_task_definition.worker_task.arn
 
   ]
 }

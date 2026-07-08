@@ -1,8 +1,20 @@
 variable "vpc_id" {
-    type = string
+  type = string
 }
 
 variable "public_subnet_ids" {
-    type = string
+  type = list(string)
 }
 
+variable "acm_certificate_arn" {
+  type = string
+}
+
+variable "ecs_sg" {
+  type = string
+}
+
+variable "ssl_policy" {
+  type    = string
+  default = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+}

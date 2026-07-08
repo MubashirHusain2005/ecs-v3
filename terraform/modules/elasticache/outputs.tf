@@ -1,5 +1,3 @@
-output "redis_url" {
-  description = "Connection URL for the Redis cache"
-  value       = "redis://${aws_elasticache_cluster.test.cache_nodes[0].address}:${aws_elasticache_cluster.test.port}"
+output "redis_endpoint" {
+  value = aws_elasticache_serverless_cache.serverless_cache.endpoint[0].address
 }
-#{ name = "REDIS_URL", value = "redis://${var.elasticache_address}:6379/0" },

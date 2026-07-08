@@ -1,15 +1,19 @@
 output "alb" {
   value = aws_lb.alb.arn
-
 }
 
 output "alb_dns_name" {
   value = aws_lb.alb.dns_name
 }
 
-output "alb_target_grp_arn" {
-  value = aws_lb_target_group.threatcomposer_tg.arn
+output "dashboard_api_tg" {
+  value = aws_lb_target_group.dashboard_api.arn
 }
+
+output "api_gateway_tg" {
+  value = aws_lb_target_group.api_gateway.arn
+}
+
 
 output "aws_lb_listener_http_id" {
   value = aws_lb_listener.http.id
@@ -30,7 +34,10 @@ output "alb_listener_https_id" {
   value       = aws_lb_listener.https.id
 }
 
-output "alb_zone_id" {
+output "alb_zone" {
   value = aws_lb.alb.zone_id
 }
 
+output "alb_sg" {
+  value = aws_security_group.alb_sg.id
+}

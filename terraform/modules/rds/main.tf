@@ -1,6 +1,6 @@
 resource "aws_db_subnet_group" "dashboard_db" {
   name       = "dashboard-db-subnet-group"
-  subnet_ids = [var.private_subnet_ids] # typically 2+ private subnets, different AZs
+  subnet_ids = var.private_subnet_ids # typically 2+ private subnets, different AZs
 
   tags = {
     Name = "dashboard-db-subnet-group"
@@ -13,10 +13,10 @@ resource "aws_security_group" "rds_sg" {
   vpc_id      = var.vpc_id
 
   ingress {
-    from_port = 5432
-    to_port   = 5432
-    protocol  = "tcp"
-    #cidr_blocks = ["0.0.0.0/0"] 
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [var.ecs_sg]
   }
 
 
@@ -64,3 +64,8 @@ locals {
     data.aws_secretsmanager_secret_version.rds.secret_string
   )
 }
+
+resource "aws_secretsmanager_secret" "dashboard_db_url" {
+  name = "dashboard-db-url"
+}
+

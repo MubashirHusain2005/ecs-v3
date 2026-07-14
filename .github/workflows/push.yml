@@ -83,9 +83,8 @@ jobs:
 
       - name: Scan Docker Image with Trivy
         uses: aquasecurity/trivy-action@v0.36.0
-        continue-on-error: true
         with:
-          image-ref:  ${{ steps.build-image.outputs.image-ref }}
+          image-ref: ${{ steps.build-image.outputs.image-ref }}
           format: sarif
           output: trivy-results-${{ matrix.service }}.sarif
           severity: HIGH,CRITICAL
@@ -98,8 +97,9 @@ jobs:
           category: trivy-${{ matrix.service }}
           sarif_file: trivy-results-${{ matrix.service }}.sarif
 
+     
       - name: Push Docker Image to ECR
-        if: always() && github.event_name == 'push'
+        if: always() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           SERVICE: ${{ matrix.service }}
@@ -108,8 +108,20 @@ jobs:
           docker push $ECR_REGISTRY/$SERVICE:$IMAGE_TAG
           docker push $ECR_REGISTRY/$SERVICE:v1
 
-
-
+      #  confirm the image actually landed in ECR rather than trusting
+      # a green "docker push" step alone.
+      - name: Verify Image Exists in ECR
+        if: always() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        env:
+          SERVICE: ${{ matrix.service }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          aws ecr describe-images \
+            --repository-name "$SERVICE" \
+            --image-ids imageTag="$IMAGE_TAG" \
+            --region "$AWS_REGION" \
+            --query 'imageDetails[0].{tag:imageTags, pushedAt:imagePushedAt, digest:imageDigest}' \
+            --output table
 
     
 

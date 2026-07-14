@@ -229,6 +229,22 @@ resource "aws_iam_policy" "oidc_access_aws" {
       },
 
       {
+        Sid = "ECR"
+        Effect = "Allow"
+        Action = [
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+          "ecr:InitiateLayerUpload",
+          "ecr:UploadLayerPart",
+          "ecr:CompleteLayerUpload",
+          "ecr:PutImage"
+        ],
+        Resource = "*"
+      },
+
+      {
         Sid    = "SecretsManager"
         Effect = "Allow"
         Action = [
@@ -389,7 +405,7 @@ resource "aws_iam_role_policy_attachment" "ecr_policy" {
 
 # ECR to store my api-gateway Docker image
 resource "aws_ecr_repository" "api_gateway" {
-  name                 = "api_gateway"
+  name                 = "api-gateway"
   image_tag_mutability = "MUTABLE"
 
   # Scan images for vulnerabilities on push
@@ -430,7 +446,7 @@ resource "aws_ecr_lifecycle_policy" "api_gateway_lifecycle" {
 
 # ECR to store my dashboard-api Docker image
 resource "aws_ecr_repository" "dashboard_api" {
-  name                 = "dashboard_api"
+  name                 = "dashboard-api"
   image_tag_mutability = "MUTABLE"
 
   # Scan images for vulnerabilities on push
@@ -472,7 +488,7 @@ resource "aws_ecr_lifecycle_policy" "dashboard_lifecycle" {
 
 # ECR to store my dashboard-api Docker image
 resource "aws_ecr_repository" "inventory_service" {
-  name                 = "inventory_service"
+  name                 = "inventory-service"
   image_tag_mutability = "MUTABLE"
 
   # Scan images for vulnerabilities on push
@@ -513,7 +529,7 @@ resource "aws_ecr_lifecycle_policy" "inventory_lifecycle" {
 
 # ECR to store my dashboard-api Docker image
 resource "aws_ecr_repository" "notification_service" {
-  name                 = "notification_service"
+  name                 = "notification-service"
   image_tag_mutability = "MUTABLE"
 
   # Scan images for vulnerabilities on push
@@ -555,7 +571,7 @@ resource "aws_ecr_lifecycle_policy" "notification_lifecycle" {
 
 # ECR to store my dashboard-api Docker image
 resource "aws_ecr_repository" "order_service" {
-  name                 = "order_service"
+  name                 = "order-service"
   image_tag_mutability = "MUTABLE"
 
   # Scan images for vulnerabilities on push
@@ -597,7 +613,7 @@ resource "aws_ecr_lifecycle_policy" "order_service_lifecycle" {
 
 # ECR to store my dashboard-api Docker image
 resource "aws_ecr_repository" "payment_service" {
-  name                 = "payment_service"
+  name                 = "payment-service"
   image_tag_mutability = "MUTABLE"
 
   # Scan images for vulnerabilities on push
@@ -638,7 +654,7 @@ resource "aws_ecr_lifecycle_policy" "payment_service_lifecycle" {
 
 # ECR to store my dashboard-api Docker image
 resource "aws_ecr_repository" "scheduler_service" {
-  name                 = "scheduler_service"
+  name                 = "scheduler"
   image_tag_mutability = "MUTABLE"
 
   # Scan images for vulnerabilities on push
@@ -679,7 +695,7 @@ resource "aws_ecr_lifecycle_policy" "scheduler_service_lifecycle" {
 
 # ECR to store my dashboard-api Docker image
 resource "aws_ecr_repository" "shipping_service" {
-  name                 = "shipping_service"
+  name                 = "shipping-service"
   image_tag_mutability = "MUTABLE"
 
   # Scan images for vulnerabilities on push
@@ -720,7 +736,7 @@ resource "aws_ecr_lifecycle_policy" "shipping_service_lifecycle" {
 
 # ECR to store my dashboard-api Docker image
 resource "aws_ecr_repository" "worker_service" {
-  name                 = "worker_service"
+  name                 = "worker"
   image_tag_mutability = "MUTABLE"
 
   # Scan images for vulnerabilities on push

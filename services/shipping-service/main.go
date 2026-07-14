@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -9,17 +8,26 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 	"time"
-
+	"context"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	_ "github.com/lib/pq"
 )
 
 var db *sql.DB
 
 func main() {
+	reg := prometheus.NewRegistry()
+	reg.MustRegister(
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+	)
+
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		log.Fatal("DATABASE_URL is required")
@@ -34,44 +42,21 @@ func main() {
 
 	db.SetMaxOpenConns(15)
 	db.SetMaxIdleConns(3)
-	db.SetConnMaxLifetime(5 * time.Minute)
 	waitForDB()
 	migrate()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/livez", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	mux.HandleFunc("/healthz", handleHealth)
 	mux.HandleFunc("/shipments", handleShipments)
 	mux.HandleFunc("/shipments/", handleShipment)
 	mux.HandleFunc("/track/", handleTrack)
 	mux.HandleFunc("/webhook", handleCarrierWebhook)
+	mux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
+
 
 	port := getEnv("PORT", "8085")
-	server := &http.Server{
-		Addr:         ":" + port,
-		Handler:      mux,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  120 * time.Second,
-	}
-
-	go func() {
-		log.Printf("Shipping service listening on :%s", port)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("server error: %v", err)
-		}
-	}()
-
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	<-sigChan
-
-	log.Println("Shutting down...")
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	if err := server.Shutdown(shutdownCtx); err != nil {
-		log.Printf("graceful shutdown error: %v", err)
-	}
+	log.Printf("Shipping service listening on :%s", port)
+	log.Fatal(http.ListenAndServe(":"+port, mux))
 }
 
 func migrate() {
@@ -406,7 +391,7 @@ func generateTrackingNumber(carrier string) string {
 	case "ups":
 		prefix = "1Z"
 	}
-	return fmt.Sprintf("%s%d%d", prefix, time.Now().UnixNano(), rand.Intn(100000))
+	return fmt.Sprintf("%s%d%d", prefix, time.Now().Unix(), rand.Intn(100000))
 }
 
 func publishEvent(eventType string, payload map[string]interface{}) {
@@ -415,13 +400,36 @@ func publishEvent(eventType string, payload map[string]interface{}) {
 		log.Printf("Event (no SQS): %s %v", eventType, payload)
 		return
 	}
+
 	event := map[string]interface{}{
 		"type":      eventType,
 		"payload":   payload,
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
 	}
 	data, _ := json.Marshal(event)
-	log.Printf("Event -> SQS: %s", string(data))
+	
+	// Create AWS config and SQS client
+	cfg, err := config.LoadDefaultConfig(context.Background())
+	if err != nil {
+		log.Printf("Failed to load AWS config: %v", err)
+		return
+	}
+	
+	sqsClient := sqs.NewFromConfig(cfg)
+	
+	// Send message to SQS
+	messageBody := string(data)
+	_, err = sqsClient.SendMessage(context.Background(), &sqs.SendMessageInput{
+		QueueUrl:    &sqsQueue,
+		MessageBody: &messageBody,
+	})
+	
+	if err != nil {
+		log.Printf("Failed to send SQS message: %v", err)
+		return
+	}
+	
+	log.Printf("Event -> SQS: %s", messageBody)
 }
 
 func httpError(w http.ResponseWriter, msg string, code int) {
@@ -438,12 +446,12 @@ func getEnv(key, fallback string) string {
 }
 
 func waitForDB() {
-	for i := 0; i < 120; i++ {
+	for i := 0; i < 30; i++ {
 		if err := db.Ping(); err == nil {
 			return
 		}
-		log.Printf("Waiting for database... (%d/120)", i+1)
+		log.Printf("Waiting for database... (%d/30)", i+1)
 		time.Sleep(time.Second)
 	}
-	log.Fatal("Database not ready after 120s")
+	log.Fatal("Database not ready after 30s")
 }

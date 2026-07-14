@@ -17,6 +17,9 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var (
@@ -27,25 +30,29 @@ var (
 )
 
 func main() {
+	reg := prometheus.NewRegistry()
+	reg.MustRegister(
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+	)
+
 	jwtSecret = []byte(getEnv("JWT_SECRET", "change-me-in-production"))
 
 	// Service routes - internal service URLs
 	routes = map[string]string{
-		"/api/orders":        getEnv("ORDER_SERVICE_URL", "http://order-service:8081"),
-		"/api/inventory":     getEnv("INVENTORY_SERVICE_URL", "http://inventory-service:8082"),
-		"/api/payments":      getEnv("PAYMENT_SERVICE_URL", "http://payment-service:8083"),
-		"/api/notifications": getEnv("NOTIFICATION_SERVICE_URL", "http://notification-service:8084"),
-		"/api/shipping":      getEnv("SHIPPING_SERVICE_URL", "http://shipping-service:8085"),
-		"/api/dashboard":     getEnv("DASHBOARD_SERVICE_URL", "http://dashboard-api:8086"),
+		"/api/orders":        getEnv("ORDER_SERVICE_URL", "http://order-service.ecs.internal:8081"),
+		"/api/inventory":     getEnv("INVENTORY_SERVICE_URL", "http://inventory-service.ecs.internal:8082"),
+		"/api/payments":      getEnv("PAYMENT_SERVICE_URL", "http://payment-service.ecs.internal:8083"),
+		"/api/notifications": getEnv("NOTIFICATION_SERVICE_URL", "http://notification-service.ecs.internal:8084"),
+		"/api/shipping":      getEnv("SHIPPING_SERVICE_URL", "http://shipping-service.ecs.internal:8085"),
+		"/api/dashboard":     getEnv("DASHBOARD_SERVICE_URL", "http://dashboard-api.ecs.internal:8086"),
 	}
 
 	// Redis for rate limiting
 	redisURL := os.Getenv("REDIS_URL")
 	if redisURL != "" {
 		opt, err := redis.ParseURL(redisURL)
-		if err != nil {
-			log.Printf("WARNING: invalid REDIS_URL, rate limiting disabled: %v", err)
-		} else {
+		if err == nil {
 			redisClient = redis.NewClient(opt)
 			if _, err := redisClient.Ping(ctx).Result(); err != nil {
 				log.Printf("WARNING: Redis not reachable, rate limiting disabled: %v", err)
@@ -57,11 +64,11 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/livez", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	mux.HandleFunc("/healthz", handleHealth)
 	mux.HandleFunc("/auth/login", handleLogin)
 	mux.HandleFunc("/auth/register", handleRegister)
 	mux.HandleFunc("/", handleProxy)
+	mux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 
 	port := getEnv("PORT", "8080")
 	server := &http.Server{
@@ -103,10 +110,10 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	// In production this would validate against a user database
 	// For this project, accept any email/password and return a JWT
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"sub":   req.Email,
-		"role":  "customer",
-		"exp":   time.Now().Add(24 * time.Hour).Unix(),
-		"iat":   time.Now().Unix(),
+		"sub":  req.Email,
+		"role": "customer",
+		"exp":  time.Now().Add(24 * time.Hour).Unix(),
+		"iat":  time.Now().Unix(),
 	})
 
 	tokenString, err := token.SignedString(jwtSecret)
@@ -149,11 +156,7 @@ func handleRegister(w http.ResponseWriter, r *http.Request) {
 		"iat":  time.Now().Unix(),
 	})
 
-	tokenString, err := token.SignedString(jwtSecret)
-	if err != nil {
-		httpError(w, "failed to generate token", http.StatusInternalServerError)
-		return
-	}
+	tokenString, _ := token.SignedString(jwtSecret)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -167,7 +170,7 @@ func handleRegister(w http.ResponseWriter, r *http.Request) {
 func handleProxy(w http.ResponseWriter, r *http.Request) {
 	// Rate limiting
 	if redisClient != nil {
-		ip := clientIP(r)
+		ip := r.RemoteAddr
 		key := fmt.Sprintf("rate:%s", ip)
 		count, _ := redisClient.Incr(ctx, key).Result()
 		if count == 1 {
@@ -188,9 +191,7 @@ func handleProxy(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Forward user info to downstream services
-		if sub, ok := claims["sub"].(string); ok {
-			r.Header.Set("X-User-Email", sub)
-		}
+		r.Header.Set("X-User-Email", claims["sub"].(string))
 		if role, ok := claims["role"].(string); ok {
 			r.Header.Set("X-User-Role", role)
 		}
@@ -281,19 +282,6 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
-func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		if idx := strings.Index(xff, ","); idx >= 0 {
-			return strings.TrimSpace(xff[:idx])
-		}
-		return strings.TrimSpace(xff)
-	}
-	if xrip := r.Header.Get("X-Real-IP"); xrip != "" {
-		return xrip
-	}
-	return r.RemoteAddr
-}
-
 var shutdownOnce sync.Once
 
 func gracefulShutdown(server *http.Server) {
@@ -307,5 +295,4 @@ func gracefulShutdown(server *http.Server) {
 		server.Shutdown(ctx)
 	})
 }
-
 

@@ -1,5 +1,4 @@
-name: Build Scan and Push Docker Images to ECR
-
+name: Build, Scan and Push Docker Images to ECR
 
 on:
   push:
@@ -7,16 +6,18 @@ on:
       - main
     paths:
       - 'services/**'
+
   pull_request:
     branches:
       - main
     paths:
       - 'services/**'
+
   workflow_dispatch:
-   
+
 permissions:
   id-token: write
-  contents: write
+  contents: read
   security-events: write
 
 env:
@@ -24,7 +25,8 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04          
+    name: Build ${{ matrix.service }}
+    runs-on: ubuntu-24.04
 
     strategy:
       fail-fast: false
@@ -39,11 +41,12 @@ jobs:
           - scheduler
           - shipping-service
           - worker
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials using OIDC
+      - name: Configure AWS Credentials using OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
@@ -53,6 +56,9 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build Docker Image
         id: build-image
         env:
@@ -60,28 +66,46 @@ jobs:
           SERVICE: ${{ matrix.service }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          cd app/$SERVICE
-          docker build -t $ECR_REGISTRY/$SERVICE:$IMAGE_TAG .
-          echo "image-ref=$ECR_REGISTRY/$SERVICE:$IMAGE_TAG" >> $GITHUB_OUTPUT
+          IMAGE_URI="$ECR_REGISTRY/$SERVICE:$IMAGE_TAG"
+
+          docker build \
+            -t "$IMAGE_URI" \
+            -t "$ECR_REGISTRY/$SERVICE:v1" \
+            ./services/$SERVICE
+
+          echo "image-ref=$IMAGE_URI" >> "$GITHUB_OUTPUT"
 
       - name: Save Docker Image
-        run: docker save -o ${{ matrix.service }}.tar ${{ steps.build-image.outputs.image-ref }}
+        run: |
+          docker save \
+            -o ${{ matrix.service }}.tar \
+            ${{ steps.build-image.outputs.image-ref }}
 
-      - name: Scan with Clair
-        uses: quay/clair-action@main
+      - name: Scan Docker Image with Trivy
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-path: ${{ matrix.service }}.tar
+          input: ${{ matrix.service }}.tar
           format: sarif
-          output: clair_results_${{ matrix.service }}.sarif
+          output: trivy-results-${{ matrix.service }}.sarif
+          severity: HIGH,CRITICAL
+          exit-code: 1
 
-      - name: Upload SARIF Report
+      - name: Upload SARIF Results
+        if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
-          category: "clair-${{ matrix.service }}"
-          sarif_file: clair_results_${{ matrix.service }}.sarif
+          category: trivy-${{ matrix.service }}
+          sarif_file: trivy-results-${{ matrix.service }}.sarif
 
       - name: Push Docker Image to ECR
-        run: docker push ${{ steps.build-image.outputs.image-ref }}
+        if: github.event_name == 'push'
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          SERVICE: ${{ matrix.service }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker push $ECR_REGISTRY/$SERVICE:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$SERVICE:v1
 
 
 

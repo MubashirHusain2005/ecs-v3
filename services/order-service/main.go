@@ -1,19 +1,22 @@
 package main
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 	"time"
-
+	"context"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	_ "github.com/lib/pq"
+	
 )
 
 var db *sql.DB
@@ -53,6 +56,12 @@ var validTransitions = map[string][]string{
 }
 
 func main() {
+	reg := prometheus.NewRegistry()
+	reg.MustRegister(
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+	)
+
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		log.Fatal("DATABASE_URL is required")
@@ -73,37 +82,14 @@ func main() {
 	migrate()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/livez", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	mux.HandleFunc("/healthz", handleHealth)
 	mux.HandleFunc("/", handleOrders)
 	mux.HandleFunc("/status", handleUpdateStatus)
+	mux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 
 	port := getEnv("PORT", "8081")
-	server := &http.Server{
-		Addr:         ":" + port,
-		Handler:      mux,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  120 * time.Second,
-	}
-
-	go func() {
-		log.Printf("Order service listening on :%s", port)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("server error: %v", err)
-		}
-	}()
-
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	<-sigChan
-
-	log.Println("Shutting down...")
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	if err := server.Shutdown(shutdownCtx); err != nil {
-		log.Printf("graceful shutdown error: %v", err)
-	}
+	log.Printf("Order service listening on :%s", port)
+	log.Fatal(http.ListenAndServe(":"+port, mux))
 }
 
 func migrate() {
@@ -267,15 +253,8 @@ func listOrders(w http.ResponseWriter, r *http.Request) {
 	orders := []Order{}
 	for rows.Next() {
 		var o Order
-		if err := rows.Scan(&o.ID, &o.CustomerID, &o.Status, &o.Items, &o.Total, &o.Currency, &o.Notes, &o.CreatedAt, &o.UpdatedAt); err != nil {
-			httpError(w, "scan failed", http.StatusInternalServerError)
-			return
-		}
+		rows.Scan(&o.ID, &o.CustomerID, &o.Status, &o.Items, &o.Total, &o.Currency, &o.Notes, &o.CreatedAt, &o.UpdatedAt)
 		orders = append(orders, o)
-	}
-	if err := rows.Err(); err != nil {
-		httpError(w, "iteration failed", http.StatusInternalServerError)
-		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -384,8 +363,29 @@ func publishEvent(eventType string, payload map[string]interface{}) {
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
 	}
 	data, _ := json.Marshal(event)
-	log.Printf("Event -> SQS: %s", string(data))
-	// Students implement actual SQS SendMessage here
+	
+	// Create AWS config and SQS client
+	cfg, err := config.LoadDefaultConfig(context.Background())
+	if err != nil {
+		log.Printf("Failed to load AWS config: %v", err)
+		return
+	}
+	
+	sqsClient := sqs.NewFromConfig(cfg)
+	
+	// Send message to SQS
+	messageBody := string(data)
+	_, err = sqsClient.SendMessage(context.Background(), &sqs.SendMessageInput{
+		QueueUrl:    &sqsQueue,
+		MessageBody: &messageBody,
+	})
+	
+	if err != nil {
+		log.Printf("Failed to send SQS message: %v", err)
+		return
+	}
+	
+	log.Printf("Event -> SQS: %s", messageBody)
 }
 
 func httpError(w http.ResponseWriter, msg string, code int) {
@@ -402,12 +402,51 @@ func getEnv(key, fallback string) string {
 }
 
 func waitForDB() {
-	for i := 0; i < 120; i++ {
+	for i := 0; i < 30; i++ {
 		if err := db.Ping(); err == nil {
 			return
 		}
-		log.Printf("Waiting for database... (%d/120)", i+1)
+		log.Printf("Waiting for database... (%d/30)", i+1)
 		time.Sleep(time.Second)
 	}
-	log.Fatal("Database not ready after 120s")
+	log.Fatal("Database not ready after 30s")
 }
+
+
+// func publishEvent(eventType string, payload map[string]interface{}) {
+// 	sqsQueue := os.Getenv("SQS_QUEUE_URL")
+// 	if sqsQueue == "" {
+// 		log.Printf("Event (no SQS): %s %v", eventType, payload)
+// 		return
+// 	}
+
+// 	event := map[string]interface{}{
+// 		"type":      eventType,
+// 		"payload":   payload,
+// 		"timestamp": time.Now().UTC().Format(time.RFC3339),
+// 	}
+// 	data, _ := json.Marshal(event)
+	
+// 	// Create AWS config and SQS client
+// 	cfg, err := config.LoadDefaultConfig(context.Background())
+// 	if err != nil {
+// 		log.Printf("Failed to load AWS config: %v", err)
+// 		return
+// 	}
+	
+// 	sqsClient := sqs.NewFromConfig(cfg)
+	
+// 	// Send message to SQS
+// 	messageBody := string(data)
+// 	_, err = sqsClient.SendMessage(context.Background(), &sqs.SendMessageInput{
+// 		QueueUrl:    &sqsQueue,
+// 		MessageBody: &messageBody,
+// 	})
+	
+// 	if err != nil {
+// 		log.Printf("Failed to send SQS message: %v", err)
+// 		return
+// 	}
+// 	///////////////////////////////////////////
+// 	log.Printf("Event -> SQS: %s", messageBody)
+// }

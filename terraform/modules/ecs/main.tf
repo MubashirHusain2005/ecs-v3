@@ -64,8 +64,16 @@ resource "aws_security_group" "ecs" {
     from_port = 8081
     to_port = 8086
     protocol = "tcp"
+    security_groups = [var.monitoring_sg]
+  }
+
+   ingress {
+    from_port = 8081
+    to_port = 8086
+    protocol = "tcp"
     self = true
   }
+
 
   ingress {
     from_port = 9090
@@ -126,7 +134,10 @@ resource "aws_service_discovery_service" "api_gateway" {
     failure_threshold = 3
   }
 
+ 
+
 }
+
 
 
 ##Api-gateway Task

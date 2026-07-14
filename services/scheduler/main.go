@@ -10,13 +10,21 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
-
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	_ "github.com/lib/pq"
 )
 
 var db *sql.DB
 
 func main() {
+	reg := prometheus.NewRegistry()
+	reg.MustRegister(
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+	)
+
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		log.Fatal("DATABASE_URL is required")
@@ -31,7 +39,6 @@ func main() {
 
 	db.SetMaxOpenConns(5)
 	db.SetMaxIdleConns(2)
-	db.SetConnMaxLifetime(5 * time.Minute)
 	waitForDB()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -40,7 +47,6 @@ func main() {
 	// Health check
 	go func() {
 		mux := http.NewServeMux()
-		mux.HandleFunc("/livez", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 		mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 			status := "ok"
 			if err := db.Ping(); err != nil {
@@ -54,6 +60,10 @@ func main() {
 		log.Printf("Scheduler health check on :%s", port)
 		http.ListenAndServe(":"+port, mux)
 	}()
+
+	http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
+	http.ListenAndServe(":2112", nil)
+	
 
 	// Graceful shutdown
 	sigChan := make(chan os.Signal, 1)
@@ -120,11 +130,7 @@ func expireReservations() {
 		var quantity int
 		rows.Scan(&orderID, &productID, &quantity)
 
-		tx, err := db.Begin()
-		if err != nil {
-			log.Printf("expire_reservations begin error: %v", err)
-			continue
-		}
+		tx, _ := db.Begin()
 		tx.Exec("UPDATE products SET reserved = GREATEST(reserved - $1, 0), updated_at = NOW() WHERE id = $2",
 			quantity, productID)
 		tx.Exec("UPDATE reservations SET status = 'expired' WHERE order_id = $1 AND product_id = $2 AND status = 'active'",
@@ -231,12 +237,12 @@ func getEnv(key, fallback string) string {
 }
 
 func waitForDB() {
-	for i := 0; i < 120; i++ {
+	for i := 0; i < 30; i++ {
 		if err := db.Ping(); err == nil {
 			return
 		}
-		log.Printf("Waiting for database... (%d/120)", i+1)
+		log.Printf("Waiting for database... (%d/30)", i+1)
 		time.Sleep(time.Second)
 	}
-	log.Fatal("Database not ready after 120s")
+	log.Fatal("Database not ready after 30s")
 }

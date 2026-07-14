@@ -1,18 +1,17 @@
 package main
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 	"time"
-
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	_ "github.com/lib/pq"
 )
 
@@ -41,6 +40,12 @@ type Reservation struct {
 }
 
 func main() {
+	reg := prometheus.NewRegistry()
+	reg.MustRegister(
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+	)
+
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		log.Fatal("DATABASE_URL is required")
@@ -55,45 +60,21 @@ func main() {
 
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(5 * time.Minute)
 	waitForDB()
 	migrate()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/livez", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	mux.HandleFunc("/healthz", handleHealth)
 	mux.HandleFunc("/products", handleProducts)
 	mux.HandleFunc("/products/", handleProduct)
 	mux.HandleFunc("/reserve", handleReserve)
 	mux.HandleFunc("/release", handleRelease)
 	mux.HandleFunc("/low-stock", handleLowStock)
+	mux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 
 	port := getEnv("PORT", "8082")
-	server := &http.Server{
-		Addr:         ":" + port,
-		Handler:      mux,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  120 * time.Second,
-	}
-
-	go func() {
-		log.Printf("Inventory service listening on :%s", port)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("server error: %v", err)
-		}
-	}()
-
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	<-sigChan
-
-	log.Println("Shutting down...")
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	if err := server.Shutdown(shutdownCtx); err != nil {
-		log.Printf("graceful shutdown error: %v", err)
-	}
+	log.Printf("Inventory service listening on :%s", port)
+	log.Fatal(http.ListenAndServe(":"+port, mux))
 }
 
 func migrate() {
@@ -262,19 +243,13 @@ func handleReserve(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Reserve stock
-		if _, err := tx.Exec("UPDATE products SET reserved = reserved + $1, updated_at = NOW() WHERE id = $2",
-			item.Quantity, item.ProductID); err != nil {
-			httpError(w, "reservation update failed", http.StatusInternalServerError)
-			return
-		}
+		tx.Exec("UPDATE products SET reserved = reserved + $1, updated_at = NOW() WHERE id = $2",
+			item.Quantity, item.ProductID)
 
-		if _, err := tx.Exec(
+		tx.Exec(
 			"INSERT INTO reservations (order_id, product_id, quantity, status, expires_at) VALUES ($1, $2, $3, 'active', $4)",
 			req.OrderID, item.ProductID, item.Quantity, expiresAt,
-		); err != nil {
-			httpError(w, "reservation insert failed", http.StatusInternalServerError)
-			return
-		}
+		)
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -320,48 +295,26 @@ func handleRelease(w http.ResponseWriter, r *http.Request) {
 		httpError(w, "query failed", http.StatusInternalServerError)
 		return
 	}
+	defer rows.Close()
 
-	type item struct {
-		productID string
-		quantity  int
-	}
-	var items []item
+	released := 0
 	for rows.Next() {
-		var it item
-		if err := rows.Scan(&it.productID, &it.quantity); err != nil {
-			rows.Close()
-			httpError(w, "scan failed", http.StatusInternalServerError)
-			return
-		}
-		items = append(items, it)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		httpError(w, "iteration failed", http.StatusInternalServerError)
-		return
+		var productID string
+		var quantity int
+		rows.Scan(&productID, &quantity)
+
+		tx.Exec("UPDATE products SET reserved = reserved - $1, updated_at = NOW() WHERE id = $2",
+			quantity, productID)
+		released++
 	}
 
-	for _, it := range items {
-		if _, err := tx.Exec("UPDATE products SET reserved = reserved - $1, updated_at = NOW() WHERE id = $2",
-			it.quantity, it.productID); err != nil {
-			httpError(w, "release update failed", http.StatusInternalServerError)
-			return
-		}
-	}
-
-	if _, err := tx.Exec("UPDATE reservations SET status = 'released' WHERE order_id = $1 AND status = 'active'", req.OrderID); err != nil {
-		httpError(w, "release update failed", http.StatusInternalServerError)
-		return
-	}
-	if err := tx.Commit(); err != nil {
-		httpError(w, "commit failed", http.StatusInternalServerError)
-		return
-	}
+	tx.Exec("UPDATE reservations SET status = 'released' WHERE order_id = $1 AND status = 'active'", req.OrderID)
+	tx.Commit()
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"order_id": req.OrderID,
-		"released": len(items),
+		"released": released,
 	})
 }
 
@@ -412,12 +365,12 @@ func getEnv(key, fallback string) string {
 }
 
 func waitForDB() {
-	for i := 0; i < 120; i++ {
+	for i := 0; i < 30; i++ {
 		if err := db.Ping(); err == nil {
 			return
 		}
-		log.Printf("Waiting for database... (%d/120)", i+1)
+		log.Printf("Waiting for database... (%d/30)", i+1)
 		time.Sleep(time.Second)
 	}
-	log.Fatal("Database not ready after 120s")
+	log.Fatal("Database not ready after 30s")
 }

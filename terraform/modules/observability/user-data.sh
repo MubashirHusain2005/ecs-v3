@@ -57,7 +57,8 @@ EOF
 cat <<'EOF' > prometheus.yml
 
 global:
-  scrape_interval: 5m
+  scrape_interval: 30s
+  scrape_timeout: 20s
   evaluation_interval: 1m
 
 scrape_configs:

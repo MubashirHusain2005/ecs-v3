@@ -168,3 +168,6 @@ variable "vpce_sg" {
   type = string
 }
 
+variable "monitoring_sg" {
+  type = string
+}

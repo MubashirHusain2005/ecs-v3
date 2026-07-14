@@ -19,6 +19,7 @@ module "ecs" {
   dashboard_api_tg            = module.alb.dashboard_api_tg
   api_gateway_tg              = module.alb.api_gateway_tg
   vpce_sg                     = module.vpc.vpce_sg
+  monitoring_sg               = module.observability.monitoring_sg
 
   ##Needs to depend on rds,elasticache modules
 }
@@ -73,6 +74,5 @@ module "observability" {
   monitoring_instance_profile = module.iam.monitoring_instance_profile
 
 
-  depends_on = [module.ecs]
 
 }

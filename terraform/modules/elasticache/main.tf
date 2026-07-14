@@ -1,38 +1,33 @@
-resource "aws_elasticache_serverless_cache" "serverless_cache" {
-  engine = "valkey"
-  name   = "example"
-
-  cache_usage_limits {
-    data_storage {
-      maximum = 10
-      unit    = "GB"
-    }
-    ecpu_per_second {
-      maximum = 5000
-    }
-  }
-
-  daily_snapshot_time      = "09:00"
-  description              = "ElastiCache Valkey serverless cache"
-  major_engine_version     = "7"
-  snapshot_retention_limit = 7
-
-  security_group_ids = [aws_security_group.elasticache_sg.id]
-  subnet_ids         = var.private_subnet_ids
-
+resource "aws_elasticache_subnet_group" "redis" {
+  name       = "ecs-v3-redis-subnet-groups"
+  subnet_ids = var.private_subnet_ids
 }
+
+resource "aws_elasticache_cluster" "redis" {
+  cluster_id           = "ecs-v3-redis"
+  engine               = "redis"
+  node_type            = "cache.t3.micro"  
+  num_cache_nodes      = 1
+  parameter_group_name = "default.redis7"
+  engine_version       = "7.0"
+  port                 = 6379 
+  subnet_group_name    = aws_elasticache_subnet_group.redis.name
+  security_group_ids   = [aws_security_group.elasticache_sg.id]
+}
+
+
 
 resource "aws_security_group" "elasticache_sg" {
   name        = "elasticache-sg"
-  description = "ElastiCache Valkey - allow access from app tier only"
+  description = "ElastiCache  - allow access from app tier only"
   vpc_id      = var.vpc_id
 
   ingress {
     from_port = 6379
     to_port   = 6379
     protocol  = "tcp"
-    #security_groups = [var.app_security_group_id]
-    description = "Valkey access from app tier"
+    security_groups = [var.ecs_sg]
+    description = " access from app tier"
   }
 
   egress {

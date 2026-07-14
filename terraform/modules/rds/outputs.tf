@@ -1,8 +1,8 @@
 output "dashboard_db_url_secret_arn" {
-  value       = aws_secretsmanager_secret.dashboard_db_url.arn
-  description = "ARN of the secret containing dashboard-api's DATABASE_URL"
+  value = aws_secretsmanager_secret.db.arn
 }
 
-output "rds" {
-  value = aws_db_instance.PostgreSQL_rds.id
+
+output "rds_endpoint" {
+  value = aws_db_instance.PostgreSQL_rds.address
 }

@@ -152,7 +152,6 @@ resource "aws_security_group" "alb_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-
   egress {
     description = "Allow all outbound traffic"
     from_port   = 0
@@ -161,3 +160,28 @@ resource "aws_security_group" "alb_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
+
+#resource "aws_lb_target_group" "grafana" {
+ # name        = "grafana-tg"
+ # port        = 3000
+ # protocol    = "HTTP"
+ # vpc_id      = var.vpc_id
+ # target_type = "instance"
+
+ # health_check {
+   # path                = "/api/health"
+  #  port                = "3000"
+  #  protocol            = "HTTP"
+  #  healthy_threshold   = 2
+   # unhealthy_threshold = 3
+   # interval            = 30
+   # timeout             = 5
+   # matcher             = "200"
+ # }
+#}
+
+#resource "aws_lb_target_group_attachment" "grafana" {
+ # target_group_arn = aws_lb_target_group.grafana.arn
+ # target_id        = var.grafana_instance_id
+ # port              = 3000
+#}

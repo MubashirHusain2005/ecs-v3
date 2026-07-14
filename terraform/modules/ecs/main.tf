@@ -20,14 +20,12 @@ resource "aws_ecs_cluster" "ecsv3_cluster" {
 
      configuration {
       execute_command_configuration {
-        kms_key_id = data.aws_kms_key.kms_key.arn
-        logging = "OVERRIDE"
+        #kms_key_id = data.aws_kms_key.kms_key.arn
+        logging = "DEFAULT"
       }
      }
     }
   
-
-
 
 ###Security Group
 
@@ -54,6 +52,35 @@ resource "aws_security_group" "ecs" {
     security_groups = [var.alb_sg]
   }
 
+  ingress {
+    from_port = 8086
+    to_port = 8086
+    protocol = "tcp"
+    self = true
+    security_groups = [var.alb_sg]
+  }
+
+  ingress {
+    from_port = 8081
+    to_port = 8086
+    protocol = "tcp"
+    self = true
+  }
+
+  ingress {
+    from_port = 9090
+    to_port = 9090
+    protocol = "tcp"
+    self = true
+  }
+
+  ingress {
+    from_port = 3000
+    to_port = 3000
+    protocol = "tcp"
+    self = true
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -61,12 +88,6 @@ resource "aws_security_group" "ecs" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  egress {
-    from_port       = 443
-    to_port         = 443
-    protocol        = "-1"
-    security_groups = [var.vpce_sg]
-  }
 }
 
 resource "aws_cloudwatch_log_group" "api_gateway" {
@@ -81,7 +102,7 @@ resource "aws_cloudwatch_log_group" "api_gateway" {
 ###CloudMap Namespace
 
 resource "aws_service_discovery_private_dns_namespace" "private" {
-  name        = "services.local"
+  name        = "services.internal"
   description = "Private dns namespace for service discovery"
   vpc         = var.vpc_id
 }
@@ -104,13 +125,15 @@ resource "aws_service_discovery_service" "api_gateway" {
   health_check_custom_config {
     failure_threshold = 3
   }
+
 }
+
 
 ##Api-gateway Task
 resource "aws_ecs_task_definition" "api_gateway_task" {
 
   depends_on               = [aws_cloudwatch_log_group.api_gateway]
-  family                   = "service"
+  family                   = "api-gateway"
   network_mode             = var.network_mode
   requires_compatibilities = ["FARGATE"]
   cpu                      = var.fargate_cpu
@@ -125,6 +148,13 @@ resource "aws_ecs_task_definition" "api_gateway_task" {
 
   container_definitions = jsonencode([
     {
+
+      health_check = {
+        path = "/healthz"
+        interval = 5
+        timeout = 5
+      }
+
       name      = var.api_task_name
       image     = var.api_image
       essential = true
@@ -171,7 +201,7 @@ resource "aws_ecs_task_definition" "api_gateway_task" {
 
 ##Api-gateway service
 resource "aws_ecs_service" "api_gateway_service" {
-  name             = "my-fargate-service"
+  name             = "api-gateway"
   cluster          = aws_ecs_cluster.ecsv3_cluster.id
   task_definition  = aws_ecs_task_definition.api_gateway_task.arn
   desired_count    = var.desired_count
@@ -187,7 +217,7 @@ resource "aws_ecs_service" "api_gateway_service" {
   load_balancer {
     target_group_arn = var.api_gateway_tg
     container_name   = var.api_task_name
-    container_port   = var.container_port
+    container_port   = var.api_gateway_container_port
   }
 
   service_registries {
@@ -202,7 +232,6 @@ resource "aws_ecs_service" "api_gateway_service" {
 
   ]
 }
-
 
 
 #######
@@ -234,13 +263,14 @@ resource "aws_service_discovery_service" "dashboard_api" {
   health_check_custom_config {
     failure_threshold = 1
   }
+
 }
 
 ##dashboard-api Task
 resource "aws_ecs_task_definition" "dashboard_api_task" {
 
   depends_on               = [aws_cloudwatch_log_group.dashboard_api]
-  family                   = "service"
+  family                   = "dashboard-api"
   network_mode             = var.network_mode
   requires_compatibilities = ["FARGATE"]
   cpu                      = var.fargate_cpu
@@ -291,7 +321,7 @@ resource "aws_ecs_task_definition" "dashboard_api_task" {
 
 ##dashboard service
 resource "aws_ecs_service" "dashboard_api_service" {
-  name             = "dashboard_api_service"
+  name             = "dashboard-api-service"
   cluster          = aws_ecs_cluster.ecsv3_cluster.id
   task_definition  = aws_ecs_task_definition.dashboard_api_task.arn
   desired_count    = var.desired_count
@@ -306,7 +336,7 @@ resource "aws_ecs_service" "dashboard_api_service" {
 
   load_balancer {
     target_group_arn = var.dashboard_api_tg
-    container_name   = var.api_task_name
+    container_name   = var.dashboard_api_task_name
     container_port   = var.container_port
   }
 
@@ -354,13 +384,15 @@ resource "aws_service_discovery_service" "inventory_service" {
   health_check_custom_config {
     failure_threshold = 3
   }
+
+
 }
 
 ##Inventory Task
 resource "aws_ecs_task_definition" "inventory_task" {
 
   depends_on               = [aws_cloudwatch_log_group.inventory]
-  family                   = "service"
+  family                   = "inventory"
   network_mode             = var.network_mode
   requires_compatibilities = ["FARGATE"]
   cpu                      = var.fargate_cpu
@@ -411,7 +443,7 @@ resource "aws_ecs_task_definition" "inventory_task" {
 
 ##Inventory service
 resource "aws_ecs_service" "inventory_service" {
-  name             = "inventory_service"
+  name             = "inventory-service"
   cluster          = aws_ecs_cluster.ecsv3_cluster.id
   task_definition  = aws_ecs_task_definition.inventory_task.arn
   desired_count    = var.desired_count
@@ -426,7 +458,7 @@ resource "aws_ecs_service" "inventory_service" {
 
   service_registries {
     registry_arn   = aws_service_discovery_service.inventory_service.arn
-    container_name = "inventory_service"
+    container_name = "inventory-service"
 
   }
 
@@ -468,13 +500,14 @@ resource "aws_service_discovery_service" "notification_service" {
   health_check_custom_config {
     failure_threshold = 3
   }
+
 }
 
 ##Notification Task
 resource "aws_ecs_task_definition" "notification_task" {
 
   depends_on               = [aws_cloudwatch_log_group.notification]
-  family                   = "service"
+  family                   = "notification"
   network_mode             = var.network_mode
   requires_compatibilities = ["FARGATE"]
   cpu                      = var.fargate_cpu
@@ -525,7 +558,7 @@ resource "aws_ecs_task_definition" "notification_task" {
 
 ##Notification service
 resource "aws_ecs_service" "notification_service" {
-  name             = "notification_service"
+  name             = "notification-service"
   cluster          = aws_ecs_cluster.ecsv3_cluster.id
   task_definition  = aws_ecs_task_definition.notification_task.arn
   desired_count    = var.desired_count
@@ -540,7 +573,7 @@ resource "aws_ecs_service" "notification_service" {
 
   service_registries {
     registry_arn   = aws_service_discovery_service.notification_service.arn
-    container_name = "notification_service"
+    container_name = "notification-service"
 
   }
 
@@ -581,13 +614,14 @@ resource "aws_service_discovery_service" "order_service" {
   health_check_custom_config {
     failure_threshold = 3
   }
+
 }
 
 ##Order Task
 resource "aws_ecs_task_definition" "order_task" {
 
   depends_on               = [aws_cloudwatch_log_group.order]
-  family                   = "service"
+  family                   = "order"
   network_mode             = var.network_mode
   requires_compatibilities = ["FARGATE"]
   cpu                      = var.fargate_cpu
@@ -645,7 +679,7 @@ resource "aws_ecs_task_definition" "order_task" {
 
 ##Order service
 resource "aws_ecs_service" "order_service" {
-  name             = "order_service"
+  name             = "order-service"
   cluster          = aws_ecs_cluster.ecsv3_cluster.id
   task_definition  = aws_ecs_task_definition.order_task.arn
   desired_count    = var.desired_count
@@ -660,13 +694,13 @@ resource "aws_ecs_service" "order_service" {
 
   service_registries {
     registry_arn   = aws_service_discovery_service.order_service.arn
-    container_name = "order_service"
+    container_name = "order-service"
 
   }
 
   depends_on = [
     aws_ecs_cluster.ecsv3_cluster,
-    aws_ecs_task_definition.order_task.arn
+    aws_ecs_task_definition.order_task
 
   ]
 }
@@ -701,13 +735,14 @@ resource "aws_service_discovery_service" "payment_service" {
   health_check_custom_config {
     failure_threshold = 3
   }
+
 }
 
 ##Payment Task
 resource "aws_ecs_task_definition" "payment_task" {
 
   depends_on               = [aws_cloudwatch_log_group.payment]
-  family                   = "service"
+  family                   = "payment"
   network_mode             = var.network_mode
   requires_compatibilities = ["FARGATE"]
   cpu                      = var.fargate_cpu
@@ -765,7 +800,7 @@ resource "aws_ecs_task_definition" "payment_task" {
 
 ##Payment service
 resource "aws_ecs_service" "payment_api_service" {
-  name             = "payment_service"
+  name             = "payment-service"
   cluster          = aws_ecs_cluster.ecsv3_cluster.id
   task_definition  = aws_ecs_task_definition.payment_task.arn
   desired_count    = var.desired_count
@@ -780,17 +815,16 @@ resource "aws_ecs_service" "payment_api_service" {
 
   service_registries {
     registry_arn   = aws_service_discovery_service.payment_service.arn
-    container_name = "payment_service"
+    container_name = "payment-service"
 
   }
 
   depends_on = [
     aws_ecs_cluster.ecsv3_cluster,
-    aws_ecs_task_definition.payment_task.arn
+    aws_ecs_task_definition.payment_task
 
   ]
 }
-
 
 
 ###Scheduler
@@ -822,13 +856,14 @@ resource "aws_service_discovery_service" "scheduler_service" {
   health_check_custom_config {
     failure_threshold = 3
   }
+
 }
 
 ##Scheduler Task
 resource "aws_ecs_task_definition" "scheduler_task" {
 
   depends_on               = [aws_cloudwatch_log_group.scheduler]
-  family                   = "service"
+  family                   = "scheduler"
   network_mode             = var.network_mode
   requires_compatibilities = ["FARGATE"]
   cpu                      = var.fargate_cpu
@@ -880,7 +915,7 @@ resource "aws_ecs_task_definition" "scheduler_task" {
 ##Scheduler  service
 
 resource "aws_ecs_service" "scheduler_service" {
-  name             = "scheduler_service"
+  name             = "scheduler-service"
   cluster          = aws_ecs_cluster.ecsv3_cluster.id
   task_definition  = aws_ecs_task_definition.scheduler_task.arn
   desired_count    = var.desired_count
@@ -895,7 +930,7 @@ resource "aws_ecs_service" "scheduler_service" {
 
   service_registries {
     registry_arn   = aws_service_discovery_service.scheduler_service.arn
-    container_name = "scheduler_service"
+    container_name = "scheduler-service"
 
   }
 
@@ -905,6 +940,7 @@ resource "aws_ecs_service" "scheduler_service" {
 
   ]
 }
+
 
 ####  Shipping
 
@@ -935,13 +971,14 @@ resource "aws_service_discovery_service" "shipping_service" {
   health_check_custom_config {
     failure_threshold = 3
   }
+
 }
 
 ##Shipping Task
 resource "aws_ecs_task_definition" "shipping_task" {
 
   depends_on               = [aws_cloudwatch_log_group.shipping]
-  family                   = "service"
+  family                   = "shipping"
   network_mode             = var.network_mode
   requires_compatibilities = ["FARGATE"]
   cpu                      = var.fargate_cpu
@@ -998,7 +1035,7 @@ resource "aws_ecs_task_definition" "shipping_task" {
 
 ##Shipping  service
 resource "aws_ecs_service" "shipping_service" {
-  name             = "shipping_service"
+  name             = "shipping-service"
   cluster          = aws_ecs_cluster.ecsv3_cluster.id
   task_definition  = aws_ecs_task_definition.shipping_task.arn
   desired_count    = var.desired_count
@@ -1013,16 +1050,19 @@ resource "aws_ecs_service" "shipping_service" {
 
   service_registries {
     registry_arn   = aws_service_discovery_service.shipping_service.arn
-    container_name = "shipping_service"
+    container_name = "shipping-service"
 
   }
 
   depends_on = [
     aws_ecs_cluster.ecsv3_cluster,
-    aws_ecs_task_definition.shipping_task.arn
+    aws_ecs_task_definition.shipping_task
 
   ]
 }
+
+
+
 
 #############Worker 
 
@@ -1052,13 +1092,14 @@ resource "aws_service_discovery_service" "worker_service" {
   health_check_custom_config {
     failure_threshold = 3
   }
+
 }
 
 ##Worker Task
 resource "aws_ecs_task_definition" "worker_task" {
 
   depends_on               = [aws_cloudwatch_log_group.worker]
-  family                   = "service"
+  family                   = "worker"
   network_mode             = var.network_mode
   requires_compatibilities = ["FARGATE"]
   cpu                      = var.fargate_cpu
@@ -1115,7 +1156,7 @@ resource "aws_ecs_task_definition" "worker_task" {
 
 ##Worker service
 resource "aws_ecs_service" "worker_service" {
-  name             = "worker_service"
+  name             = "worker-service"
   cluster          = aws_ecs_cluster.ecsv3_cluster.id
   task_definition  = aws_ecs_task_definition.worker_task.arn
   desired_count    = var.desired_count
@@ -1130,13 +1171,13 @@ resource "aws_ecs_service" "worker_service" {
 
   service_registries {
     registry_arn   = aws_service_discovery_service.worker_service.arn
-    container_name = "worker_service"
+    container_name = "worker-service"
 
   }
 
   depends_on = [
     aws_ecs_cluster.ecsv3_cluster,
-    aws_ecs_task_definition.worker_task.arn
+    aws_ecs_task_definition.worker_task
 
   ]
 }

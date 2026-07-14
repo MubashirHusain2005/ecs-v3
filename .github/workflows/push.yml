@@ -1,0 +1,92 @@
+name: Build Scan and Push Docker Images to ECR
+
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'services/**'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'services/**'
+  workflow_dispatch:
+   
+permissions:
+  id-token: write
+  contents: write
+  security-events: write
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04          
+
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - api-gateway
+          - dashboard-api
+          - inventory-service
+          - notification-service
+          - order-service
+          - payment-service
+          - scheduler
+          - shipping-service
+          - worker
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials using OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build Docker Image
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          SERVICE: ${{ matrix.service }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd app/$SERVICE
+          docker build -t $ECR_REGISTRY/$SERVICE:$IMAGE_TAG .
+          echo "image-ref=$ECR_REGISTRY/$SERVICE:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Save Docker Image
+        run: docker save -o ${{ matrix.service }}.tar ${{ steps.build-image.outputs.image-ref }}
+
+      - name: Scan with Clair
+        uses: quay/clair-action@main
+        with:
+          image-path: ${{ matrix.service }}.tar
+          format: sarif
+          output: clair_results_${{ matrix.service }}.sarif
+
+      - name: Upload SARIF Report
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          category: "clair-${{ matrix.service }}"
+          sarif_file: clair_results_${{ matrix.service }}.sarif
+
+      - name: Push Docker Image to ECR
+        run: docker push ${{ steps.build-image.outputs.image-ref }}
+
+
+
+
+    
+
+  
+  

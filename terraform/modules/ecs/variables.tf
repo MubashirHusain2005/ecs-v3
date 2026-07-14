@@ -5,8 +5,14 @@ variable "fargate_cpu" {
 
 variable "container_port" {
   type    = number
-  default = 8080
+  default = 8086
 }
+
+variable "api_gateway_container_port" {
+  default = 8080
+  type = number
+}
+
 
 variable "family" {
   type    = string

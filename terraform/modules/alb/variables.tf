@@ -18,3 +18,5 @@ variable "ssl_policy" {
   type    = string
   default = "ELBSecurityPolicy-TLS13-1-2-2021-06"
 }
+
+

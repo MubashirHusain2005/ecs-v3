@@ -23,7 +23,7 @@ resource "aws_security_group" "rds_sg" {
   egress {
     from_port   = 0
     to_port     = 0
-    protocol    = -1
+    protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
@@ -34,12 +34,12 @@ resource "aws_db_instance" "PostgreSQL_rds" {
   db_subnet_group_name        = aws_db_subnet_group.dashboard_db.name
   allocated_storage           = 10
   db_name                     = "mydb"
+  max_allocated_storage =   100
   engine                      = "postgres"
-  engine_version              = "17.2"
-  instance_class              = "db.t3.micro"
-  username                    = "dashboard_app"
-  parameter_group_name        = "default.postgres17"
-  manage_master_user_password = true
+  engine_version              = "18.4"
+  instance_class              = "db.t4g.large"
+  username                    = "db_owner"
+   password = random_password.db_password.result
   publicly_accessible         = false
   storage_encrypted           = true
 
@@ -51,21 +51,21 @@ resource "aws_db_instance" "PostgreSQL_rds" {
 
 }
 
-##Find the secret that RDS automatically created for this specific database instance
-data "aws_secretsmanager_secret" "rds" {
-  arn = aws_db_instance.PostgreSQL_rds.master_user_secret[0].secret_arn
+
+resource "random_password" "db_password" {
+  length           = 32
+  special          = true
+  override_special = "!#$%&()*+,-.:;<=>?[]^_`{|}~"
 }
 
-data "aws_secretsmanager_secret_version" "rds" {
-  secret_id = data.aws_secretsmanager_secret.rds.id
-}
-locals {
-  db_credentials = jsondecode(
-    data.aws_secretsmanager_secret_version.rds.secret_string
-  )
+resource "aws_secretsmanager_secret" "db" {
+  name = "rds-credentials"
 }
 
-resource "aws_secretsmanager_secret" "dashboard_db_url" {
-  name = "dashboard-db-url"
-}
+resource "aws_secretsmanager_secret_version" "db" {
+  secret_id = aws_secretsmanager_secret.db.id
 
+  secret_string = jsonencode({
+    url = "postgresql://${aws_db_instance.PostgreSQL_rds.username}:${urlencode(random_password.db_password.result)}@${aws_db_instance.PostgreSQL_rds.address}:5432/${aws_db_instance.PostgreSQL_rds.db_name}"
+  })
+}

@@ -8,7 +8,7 @@ resource "aws_sqs_queue" "main_queue" {
   receive_wait_time_seconds = 0
   sqs_managed_sse_enabled   = true
   redrive_policy = jsonencode({
-    deadLetterTargetArn = aws_sqs_queue.dead_leter_queue.arn
+    deadLetterTargetArn = aws_sqs_queue.dead_letter_queue.arn
     maxReceiveCount     = 4
   })
   tags = {

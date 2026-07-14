@@ -9,3 +9,9 @@ output "vpc_flow_logs_role" {
 output "ecs_task_role" {
   value = aws_iam_role.ecs_task_role.arn
 }
+
+
+output "monitoring_instance_profile" {
+  value = aws_iam_instance_profile.monitoring_profile.name
+}
+

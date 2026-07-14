@@ -14,24 +14,6 @@ variable "enable_support" {
 }
 
 
-variable "cluster_name" {
-  type    = string
-  default = "eks-cluster"
-}
-
-variable "nodes_name" {
-  type    = string
-  default = "eks-nodes"
-}
-
-variable "cert_issuer" {
-  description = "Which lets encrypt clusterissuer to use"
-  type        = string
-  default     = "letsencrypt-prod"
-}
-
-
-
 variable "inst_tenancy" {
   type    = string
   default = "default"

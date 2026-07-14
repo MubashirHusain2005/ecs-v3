@@ -85,7 +85,7 @@ jobs:
         uses: aquasecurity/trivy-action@v0.36.0
         continue-on-error: true
         with:
-          input: ${{ matrix.service }}.tar
+          image-ref:  ${{ steps.build-image.outputs.image-ref }}
           format: sarif
           output: trivy-results-${{ matrix.service }}.sarif
           severity: HIGH,CRITICAL
@@ -99,7 +99,7 @@ jobs:
           sarif_file: trivy-results-${{ matrix.service }}.sarif
 
       - name: Push Docker Image to ECR
-        if: github.event_name == 'push'
+        if: always() && github.event_name == 'push'
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           SERVICE: ${{ matrix.service }}

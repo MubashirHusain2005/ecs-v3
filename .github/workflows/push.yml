@@ -1,17 +1,17 @@
 name: Build, Scan and Push Docker Images to ECR
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'services/**'
+ # push:
+  #  branches:
+   #   - main
+  #  paths:
+  #    - 'services/**'
 
-  pull_request:
-    branches:
-      - main
-    paths:
-      - 'services/**'
+ # pull_request:
+  #  branches:
+  #    - main
+  #  paths:
+   #   - 'services/**'
 
   workflow_dispatch:
 

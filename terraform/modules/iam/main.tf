@@ -46,7 +46,8 @@ resource "aws_iam_role_policy" "ecs_task_execution" {
         "secretsmanager:GetSecretValue",
         "secretsmanager:DescribeSecret",
         "secretsmanager:BatchGetSecretValue",
-        "secretsmanager:ListSecrets"
+        "secretsmanager:ListSecrets",
+        "secretsmanager:GetResourcePolicy"
       ]
       Resource = "*"
     }]

@@ -1,8 +1,8 @@
 ##Add health checks to Microservices
 
-data "aws_kms_key" "kms_key" {
-  key_id = "alias/kms-ecr"
-}
+#data "aws_kms_key" "kms_key" {
+ # key_id = "alias/kms-ecr"
+#}
 
 data "aws_secretsmanager_secret" "api_gateway_secret" {
   name = "JWT_SECRET"

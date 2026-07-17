@@ -385,6 +385,19 @@ resource "aws_iam_policy" "oidc_networking" {
         ]
         Resource = "*"
       },
+
+      {
+        Sid = "Route53"
+        Effect = "Allow"
+        Action = [
+          "route53:ListHostedZones",
+          "route53:GetHostedZone",
+          "route53:ListResourceRecordSets",
+          "route53:ChangeResourceRecordSets",
+          "route53:ListTagsForResource"
+        ]
+        Resource = "*"
+      },
       {
         Sid    = "ElasticLoadBalancing"
         Effect = "Allow"

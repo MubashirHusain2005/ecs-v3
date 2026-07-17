@@ -33,7 +33,7 @@ jobs:
       AWS_REGION: eu-west-2
       TF_VERSION: 1.13.3
       TF_ENV: ${{ github.event.inputs.environment || 'dev' }}
-      TF_STATE_KEY: envs/${{ github.event.inputs.environment || 'dev' }}/ecs-fargate/terraform.tfstate
+      TF_STATE_KEY: envs/${{ github.event.inputs.environment || 'dev' }}/ecs/terraform.tfstate
     permissions:
       id-token: write
       contents: read
@@ -47,7 +47,7 @@ jobs:
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ env.TF_ENV == 'prod' && secrets.AWS_ROLE_ARN_PROD || secrets.AWS_ROLE_ARN_DEV }}
+          role-to-assume: ${{ env.TF_ENV == 'prod' && secrets.AWS_ROLE_ARN || secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Setup Terraform

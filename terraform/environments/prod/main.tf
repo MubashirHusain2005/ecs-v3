@@ -75,7 +75,7 @@ module "rds" {
 module "sqs" {
   source                        = "../../modules/sqs"
   sqs_message_retention_seconds = var.sqs_message_retention_seconds
-  sqs_max_receive_count         = var.sqs_message_retention_seconds
+  sqs_max_receive_count         = var.sqs_max_receive_count
   environment                   = var.environment
 }
 

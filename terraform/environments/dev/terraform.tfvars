@@ -1,0 +1,9 @@
+vpc_cidr                      = "10.0.0.0/16"
+environment                   = "Dev"
+retention_in_days             = 7
+enable_deletion_protection    = false
+sqs_message_retention_seconds = 86400
+sqs_max_receive_count         = 2
+skip_final_snapshot           = true
+multi_az                      = false
+instance_class                = db.t4g.medium

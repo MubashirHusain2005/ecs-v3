@@ -47,8 +47,6 @@ resource "aws_iam_role_policy" "ecs_task_execution" {
         "secretsmanager:DescribeSecret",
         "secretsmanager:BatchGetSecretValue",
         "secretsmanager:ListSecrets"
-        #"aws:SourceVpc",
-        #"aws:SourceVpce"
       ]
       Resource = "*"
     }]

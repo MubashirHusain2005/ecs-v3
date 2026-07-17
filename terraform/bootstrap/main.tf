@@ -139,20 +139,26 @@ resource "aws_iam_role" "github_oidc_role" {
   })
 }
 
-resource "aws_iam_policy" "oidc_access_aws" {
-  name        = "oidc_access_aws"
+locals {
+  oidc_role_name = aws_iam_role.github_oidc_role.name
+}
+
+# ---------------------------------------------------------------------------
+# 1. State backend + KMS + logging
+# ---------------------------------------------------------------------------
+resource "aws_iam_policy" "oidc_state_and_kms" {
+  name        = "oidc-state-and-kms"
   path        = "/"
-  description = "Policy document to allow OIDC access to AWS resources during CI/CD"
+  description = "S3 state backend, DynamoDB lock table, KMS, CloudWatch Logs"
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
-
       {
         Sid      = "ListStateBucket"
         Effect   = "Allow"
         Action   = "s3:ListBucket"
-        Resource = "${aws_s3_bucket.terraform_state_bucket.arn}"
+        Resource = ["*"]
       },
       {
         Sid    = "ReadWriteStateObject"
@@ -163,6 +169,16 @@ resource "aws_iam_policy" "oidc_access_aws" {
           "s3:DeleteObject"
         ]
         Resource = "${aws_s3_bucket.terraform_state_bucket.arn}/*"
+      },
+      {
+        Sid    = "StateLockTable"
+        Effect = "Allow"
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:DeleteItem"
+        ]
+        Resource = "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/terraform-lock"
       },
       {
         Sid    = "AccessToKMS"
@@ -189,7 +205,6 @@ resource "aws_iam_policy" "oidc_access_aws" {
         ]
         Resource = "*"
       },
-
       {
         Sid    = "CloudWatchLogs"
         Effect = "Allow"
@@ -201,14 +216,31 @@ resource "aws_iam_policy" "oidc_access_aws" {
           "logs:DescribeLogStreams",
           "logs:PutRetentionPolicy",
           "logs:ListTagsForResource",
+          "logs:TagResource",
           "logs:DeleteLogGroup",
           "logs:DeleteRetentionPolicy"
         ]
         Resource = "*"
-      },
+      }
+    ]
+  })
 
+  depends_on = [aws_iam_openid_connect_provider.oidc]
+}
+
+# ---------------------------------------------------------------------------
+# 2. IAM management + ECS
+# ---------------------------------------------------------------------------
+resource "aws_iam_policy" "oidc_iam_and_ecs" {
+  name        = "oidc-iam-and-ecs"
+  path        = "/"
+  description = "IAM role/policy management, PassRole to ECS, ECS cluster/service/task management"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
       {
-        Sid    = "IAM"
+        Sid    = "IAMReadOnly"
         Effect = "Allow"
         Action = [
           "iam:GetUserPolicy",
@@ -223,11 +255,278 @@ resource "aws_iam_policy" "oidc_access_aws" {
           "iam:ListGroupPolicies",
           "iam:ListPolicyVersions",
           "iam:ListPolicies",
-          "iam:ListUsers"
-        ],
+          "iam:ListUsers",
+          "iam:GetRole",
+          "iam:GetRolePolicy",
+          "iam:ListRolePolicies",
+          "iam:ListAttachedRolePolicies",
+          "iam:ListInstanceProfilesForRole",
+          "iam:GetInstanceProfile"
+        ]
         Resource = "*"
       },
+      {
+        Sid    = "IAMManageRoles"
+        Effect = "Allow"
+        Action = [
+          "iam:CreateRole",
+          "iam:DeleteRole",
+          "iam:UpdateRole",
+          "iam:UpdateAssumeRolePolicy",
+          "iam:TagRole",
+          "iam:UntagRole",
+          "iam:PutRolePolicy",
+          "iam:DeleteRolePolicy",
+          "iam:AttachRolePolicy",
+          "iam:DetachRolePolicy",
+          "iam:CreatePolicy",
+          "iam:DeletePolicy",
+          "iam:CreatePolicyVersion",
+          "iam:DeletePolicyVersion",
+          "iam:TagPolicy",
+          "iam:CreateInstanceProfile",
+          "iam:DeleteInstanceProfile",
+          "iam:AddRoleToInstanceProfile",
+          "iam:RemoveRoleFromInstanceProfile"
+        ]
+        Resource = [
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/*",
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/*",
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:instance-profile/*"
+        ]
+      },
+      {
+        Sid      = "PassRolesToECS"
+        Effect   = "Allow"
+        Action   = "iam:PassRole"
+        Resource = ["*"]
+        Condition = {
+          StringEquals = {
+            "iam:PassedToService" = "ecs-tasks.amazonaws.com"
+          }
+        }
+      },
+      {
+        Sid    = "ECS"
+        Effect = "Allow"
+        Action = [
+          "ecs:CreateCluster",
+          "ecs:DeleteCluster",
+          "ecs:DescribeClusters",
+          "ecs:ListClusters",
+          "ecs:CreateService",
+          "ecs:UpdateService",
+          "ecs:DeleteService",
+          "ecs:DescribeServices",
+          "ecs:ListServices",
+          "ecs:RegisterTaskDefinition",
+          "ecs:DeregisterTaskDefinition",
+          "ecs:DescribeTaskDefinition",
+          "ecs:DescribeTasks",
+          "ecs:ListTasks",
+          "ecs:ListContainerInstances",
+          "ecs:DescribeContainerInstances",
+          "ecs:StartTask",
+          "ecs:StopTask",
+          "ecs:RunTask",
+          "ecs:TagResource",
+          "ecs:UntagResource",
+          "ecs:PutClusterCapacityProviders",
+          "ecs:CreateCapacityProvider",
+          "ecs:DeleteCapacityProvider",
+          "ecs:DescribeCapacityProviders"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
 
+  depends_on = [aws_iam_openid_connect_provider.oidc]
+}
+
+# ---------------------------------------------------------------------------
+# 3. Networking (VPC, subnets, routing, ELB)
+# ---------------------------------------------------------------------------
+resource "aws_iam_policy" "oidc_networking" {
+  name        = "oidc-networking"
+  path        = "/"
+  description = "VPC, subnets, security groups, routing, load balancing"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "EC2Networking"
+        Effect = "Allow"
+        Action = [
+          "ec2:CreateVpc", "ec2:DeleteVpc", "ec2:ModifyVpcAttribute",
+          "ec2:DescribeVpcs", "ec2:DescribeVpcAttribute",
+          "ec2:CreateSubnet", "ec2:DeleteSubnet", "ec2:ModifySubnetAttribute",
+          "ec2:DescribeSubnets",
+          "ec2:CreateSecurityGroup", "ec2:DeleteSecurityGroup",
+          "ec2:AuthorizeSecurityGroupIngress", "ec2:AuthorizeSecurityGroupEgress",
+          "ec2:RevokeSecurityGroupIngress", "ec2:RevokeSecurityGroupEgress",
+          "ec2:DescribeSecurityGroups", "ec2:DescribeSecurityGroupRules",
+          "ec2:CreateRouteTable", "ec2:DeleteRouteTable",
+          "ec2:CreateRoute", "ec2:DeleteRoute",
+          "ec2:AssociateRouteTable", "ec2:DisassociateRouteTable",
+          "ec2:DescribeRouteTables",
+          "ec2:CreateInternetGateway", "ec2:DeleteInternetGateway",
+          "ec2:AttachInternetGateway", "ec2:DetachInternetGateway",
+          "ec2:DescribeInternetGateways",
+          "ec2:CreateNatGateway", "ec2:DeleteNatGateway", "ec2:DescribeNatGateways",
+          "ec2:AllocateAddress", "ec2:ReleaseAddress", "ec2:DescribeAddresses",
+          "ec2:CreateFlowLogs", "ec2:DeleteFlowLogs", "ec2:DescribeFlowLogs",
+          "ec2:CreateTags", "ec2:DeleteTags", "ec2:DescribeTags",
+          "ec2:DescribeAvailabilityZones",
+          "ec2:DescribeNetworkInterfaces",
+          "ec2:DescribeAccountAttributes"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "ElasticLoadBalancing"
+        Effect = "Allow"
+        Action = [
+          "elasticloadbalancing:CreateLoadBalancer",
+          "elasticloadbalancing:DeleteLoadBalancer",
+          "elasticloadbalancing:DescribeLoadBalancers",
+          "elasticloadbalancing:ModifyLoadBalancerAttributes",
+          "elasticloadbalancing:CreateTargetGroup",
+          "elasticloadbalancing:DeleteTargetGroup",
+          "elasticloadbalancing:ModifyTargetGroup",
+          "elasticloadbalancing:ModifyTargetGroupAttributes",
+          "elasticloadbalancing:DescribeTargetGroups",
+          "elasticloadbalancing:DescribeTargetHealth",
+          "elasticloadbalancing:RegisterTargets",
+          "elasticloadbalancing:DeregisterTargets",
+          "elasticloadbalancing:CreateListener",
+          "elasticloadbalancing:DeleteListener",
+          "elasticloadbalancing:ModifyListener",
+          "elasticloadbalancing:DescribeListeners",
+          "elasticloadbalancing:AddTags",
+          "elasticloadbalancing:DescribeTags"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+
+  depends_on = [aws_iam_openid_connect_provider.oidc]
+}
+
+# ---------------------------------------------------------------------------
+# 4. Data services (ElastiCache, CloudMap, DynamoDB, RDS, SQS, Secrets, ECR)
+# ---------------------------------------------------------------------------
+resource "aws_iam_policy" "oidc_data_services" {
+  name        = "oidc-data-services"
+  path        = "/"
+  description = "ElastiCache, ServiceDiscovery, DynamoDB, RDS, SQS, SecretsManager, ECR"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "ElastiCache"
+        Effect = "Allow"
+        Action = [
+          "elasticache:CreateServerlessCache",
+          "elasticache:DeleteServerlessCache",
+          "elasticache:DescribeServerlessCaches",
+          "elasticache:ModifyServerlessCache",
+          "elasticache:CreateCacheSubnetGroup",
+          "elasticache:DeleteCacheSubnetGroup",
+          "elasticache:DescribeCacheSubnetGroups",
+          "elasticache:TagResource",
+          "elasticache:ListTagsForResource"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "ServiceDiscovery"
+        Effect = "Allow"
+        Action = [
+          "servicediscovery:CreateHttpNamespace",
+          "servicediscovery:CreatePrivateDnsNamespace",
+          "servicediscovery:DeleteNamespace",
+          "servicediscovery:GetNamespace",
+          "servicediscovery:ListNamespaces",
+          "servicediscovery:GetOperation",
+          "servicediscovery:CreateService",
+          "servicediscovery:DeleteService",
+          "servicediscovery:GetService",
+          "servicediscovery:ListServices",
+          "servicediscovery:UpdateService",
+          "servicediscovery:TagResource",
+          "servicediscovery:DiscoverInstances",
+          "servicediscovery:GetInstancesHealthStatus"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "DynamoDB"
+        Effect = "Allow"
+        Action = [
+          "dynamodb:CreateTable",
+          "dynamodb:DeleteTable",
+          "dynamodb:DescribeTable",
+          "dynamodb:UpdateTable",
+          "dynamodb:TagResource",
+          "dynamodb:ListTagsOfResource"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "RDS"
+        Effect = "Allow"
+        Action = [
+          "rds:CreateDBInstance",
+          "rds:DeleteDBInstance",
+          "rds:ModifyDBInstance",
+          "rds:DescribeDBInstances",
+          "rds:CreateDBCluster",
+          "rds:DeleteDBCluster",
+          "rds:ModifyDBCluster",
+          "rds:DescribeDBClusters",
+          "rds:CreateDBSubnetGroup",
+          "rds:DeleteDBSubnetGroup",
+          "rds:DescribeDBSubnetGroups",
+          "rds:AddTagsToResource",
+          "rds:ListTagsForResource"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "SQS"
+        Effect = "Allow"
+        Action = [
+          "sqs:CreateQueue",
+          "sqs:DeleteQueue",
+          "sqs:GetQueueAttributes",
+          "sqs:SetQueueAttributes",
+          "sqs:GetQueueUrl",
+          "sqs:TagQueue",
+          "sqs:ListQueues",
+          "sqs:ReceiveMessage",
+          "sqs:DeleteMessage",
+          "sqs:SendMessage"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "SecretsManager"
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret",
+          "secretsmanager:DeleteSecret",
+          "secretsmanager:CreateSecret",
+          "secretsmanager:PutSecretValue",
+          "secretsmanager:UpdateSecret",
+          "secretsmanager:TagResource"
+        ]
+        Resource = "*"
+      },
       {
         Sid    = "ECR"
         Effect = "Allow"
@@ -240,67 +539,12 @@ resource "aws_iam_policy" "oidc_access_aws" {
           "ecr:UploadLayerPart",
           "ecr:CompleteLayerUpload",
           "ecr:PutImage",
-          "ecr:DescribeImages"
-        ],
-        Resource = "*"
-      },
-
-      {
-        Sid    = "SecretsManager"
-        Effect = "Allow"
-        Action = [
-          "secretsmanager:GetSecretValue",
-          "secretsmanager:DescribeSecret",
-          "secretsmanager:DeleteSecret"
-        ]
-        Resource = "*"
-      },
-
-      {
-        Sid    = "ECS"
-        Effect = "Allow"
-        Action = [
-          "ecs:ListContainerInstances",
-          "ecs:RegisterContainerInstance",
-          "ecs:SubmitContainerInstance",
-          "ecs:SubmitTaskStateChange",
-          "ecs:DescribeContainerInstances",
-          "ecs:DescribeTasks",
-          "ecs:ListTasks",
-          "ecs:CreateCluster",
-          "ecs:DescribeCluster",
-          "ecs:DeleteCluster",
-          "ecs:ListClusters",
-          "ecs:Describe*",
-          "ecs:List*",
-          "ecs:UpdateContainerAgent",
-          "ecs:StartTask",
-          "ecs:StopTask",
-          "ecs:RunTask"
-        ]
-        Resource = "*"
-      },
-
-      {
-        Sid = "SQS"
-        Effect = "Allow"
-        Action = [
-          "sqs:RecieveMessage",
-          "sqs:DeleteMessage",
-          "sqs:receivemessage"
-        ]
-        Resource = "*"
-      },
-
-      {
-        Sid    = "ElasticLoadBalancing"
-        Effect = "Allow"
-        Action = [
-          "elasticloadbalancing:CreateLoadBalancer",
-          "elasticloadbalancing:CreateTargetGroup",
-          "elasticloadbalancing:CreateListener",
-          "elasticloadbalancing:DescribeLoadBalancers",
-          "elasticloadbalancing:DeleteLoadBalancer"
+          "ecr:DescribeImages",
+          "ecr:CreateRepository",
+          "ecr:DeleteRepository",
+          "ecr:DescribeRepositories",
+          "ecr:SetRepositoryPolicy",
+          "ecr:TagResource"
         ]
         Resource = "*"
       }
@@ -310,10 +554,35 @@ resource "aws_iam_policy" "oidc_access_aws" {
   depends_on = [aws_iam_openid_connect_provider.oidc]
 }
 
-resource "aws_iam_role_policy_attachment" "oidc_s3_access" {
-  role       = aws_iam_role.github_oidc_role.name
-  policy_arn = aws_iam_policy.oidc_access_aws.arn
+# ---------------------------------------------------------------------------
+# Attachments — all four attach to the same OIDC role
+# ---------------------------------------------------------------------------
+resource "aws_iam_role_policy_attachment" "oidc_state_and_kms" {
+  role       = local.oidc_role_name
+  policy_arn = aws_iam_policy.oidc_state_and_kms.arn
 }
+
+resource "aws_iam_role_policy_attachment" "oidc_iam_and_ecs" {
+  role       = local.oidc_role_name
+  policy_arn = aws_iam_policy.oidc_iam_and_ecs.arn
+}
+
+resource "aws_iam_role_policy_attachment" "oidc_networking" {
+  role       = local.oidc_role_name
+  policy_arn = aws_iam_policy.oidc_networking.arn
+}
+
+resource "aws_iam_role_policy_attachment" "oidc_data_services" {
+  role       = local.oidc_role_name
+  policy_arn = aws_iam_policy.oidc_data_services.arn
+}
+
+data "aws_caller_identity" "current" {}
+
+#resource "aws_iam_role_policy_attachment" "oidc_s3_access" {
+ # role       = local.oidc_role_name
+ # policy_arn = aws_iam_policy.oidc_access_aws.arn
+#}
 
 
 ##KMS Encryption of ECR Repos
@@ -347,7 +616,7 @@ resource "aws_kms_key_policy" "kms_key_policy" {
         Effect = "Allow"
 
         Principal = {
-          AWS = "arn:aws:iam::038774803581:user/aws-user"
+          AWS = "arn:aws:iam::125474112898:user/aws-user"
         }
 
         Action   = "kms:*"

@@ -6,7 +6,7 @@ sqs_message_retention_seconds = 86400
 sqs_max_receive_count         = 2
 skip_final_snapshot           = false
 multi_az                      = true
-instance_class                = db.t4g.large
+instance_class                = "db.t4g.large"
 
 
 

@@ -24,6 +24,7 @@ jobs:
   terraform:
     name: "Terraform Infrastructure"
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: ${{ github.event.inputs.environment || 'dev' }}
     defaults:
       run:
@@ -46,7 +47,7 @@ jobs:
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ env.TF_ENV == 'prod' && secrets.AWS_ROLE_ARN || secrets.AWS_ROLE_ARN }}
+          role-to-assume: ${{ env.TF_ENV == 'prod' && secrets.AWS_ROLE_ARN_PROD || secrets.AWS_ROLE_ARN_DEV }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Setup Terraform
@@ -96,7 +97,7 @@ jobs:
 
       - name: Terraform Plan
         if: github.event.inputs.action == 'plan' || github.event.inputs.action == 'apply'
-        run: terraform plan -out=tfplan
+        run: terraform plan -var-file="terraform.tfvars" -out=tfplan
 
       - name: Terraform Apply
         if: github.event.inputs.action == 'apply'
@@ -104,5 +105,4 @@ jobs:
 
       - name: Terraform Destroy
         if: github.event.inputs.action == 'destroy'
-        run: terraform destroy -auto-approve
-
+        run: terraform destroy -var-file="terraform.tfvars" -auto-approve

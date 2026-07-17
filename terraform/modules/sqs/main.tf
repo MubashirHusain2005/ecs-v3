@@ -9,7 +9,7 @@ resource "aws_sqs_queue" "main_queue" {
   sqs_managed_sse_enabled   = true
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.dead_letter_queue.arn
-    maxReceiveCount     = 4
+    maxReceiveCount     = var.sqs_max_receive_count
   })
   tags = {
     Environment = "${var.environment}-production-sqs-queue"

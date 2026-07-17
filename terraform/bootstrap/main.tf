@@ -380,7 +380,8 @@ resource "aws_iam_policy" "oidc_networking" {
           "ec2:CreateTags", "ec2:DeleteTags", "ec2:DescribeTags",
           "ec2:DescribeAvailabilityZones",
           "ec2:DescribeNetworkInterfaces",
-          "ec2:DescribeAccountAttributes"
+          "ec2:DescribeAccountAttributes",
+          "ec2:DescribeImages"
         ]
         Resource = "*"
       },
@@ -523,7 +524,8 @@ resource "aws_iam_policy" "oidc_data_services" {
           "secretsmanager:CreateSecret",
           "secretsmanager:PutSecretValue",
           "secretsmanager:UpdateSecret",
-          "secretsmanager:TagResource"
+          "secretsmanager:TagResource",
+          "secretsmanager:GetResourcePolicy" 
         ]
         Resource = "*"
       },
@@ -616,7 +618,7 @@ resource "aws_kms_key_policy" "kms_key_policy" {
         Effect = "Allow"
 
         Principal = {
-          AWS = "arn:aws:iam::125474112898:user/aws-user"
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
         }
 
         Action   = "kms:*"

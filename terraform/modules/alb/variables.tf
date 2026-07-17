@@ -19,4 +19,10 @@ variable "ssl_policy" {
   default = "ELBSecurityPolicy-TLS13-1-2-2021-06"
 }
 
+variable "environment" {
+  type = string
+}
 
+variable "enable_deletion_protection" {
+  type = bool
+}

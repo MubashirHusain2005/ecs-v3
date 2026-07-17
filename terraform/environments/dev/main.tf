@@ -1,8 +1,11 @@
-##Modules
+##Dev is what ill be using 
 
 module "vpc" {
   source             = "../../modules/vpc"
   vpc_flow_logs_role = module.iam.vpc_flow_logs_role
+  vpc_cidr           = var.vpc_cidr
+  environment        = var.environment
+  retention_in_days  = var.retention_in_days
 }
 
 module "ecs" {
@@ -21,7 +24,6 @@ module "ecs" {
   vpce_sg                     = module.vpc.vpce_sg
   monitoring_sg               = module.observability.monitoring_sg
 
-  ##Needs to depend on rds,elasticache modules
 }
 
 module "elasticache" {
@@ -29,6 +31,7 @@ module "elasticache" {
   private_subnet_ids = module.vpc.private_subnet_ids
   vpc_id             = module.vpc.vpc_id
   ecs_sg             = module.ecs.ecs_sg
+  environment        = var.environment
 
 }
 
@@ -38,11 +41,13 @@ module "iam" {
 }
 
 module "alb" {
-  source              = "../../modules/alb"
-  vpc_id              = module.vpc.vpc_id
-  public_subnet_ids   = module.vpc.public_subnet_ids
-  acm_certificate_arn = module.acm.acm_certificate_arn
-  ecs_sg              = module.ecs.ecs_sg
+  source                     = "../../modules/alb"
+  vpc_id                     = module.vpc.vpc_id
+  public_subnet_ids          = module.vpc.public_subnet_ids
+  acm_certificate_arn        = module.acm.acm_certificate_arn
+  ecs_sg                     = module.ecs.ecs_sg
+  environment                = var.environment
+  enable_deletion_protection = var.enable_deletion_protection
 
 }
 
@@ -55,14 +60,21 @@ module "acm" {
 
 
 module "rds" {
-  source             = "../../modules/rds"
-  private_subnet_ids = module.vpc.private_subnet_ids
-  vpc_id             = module.vpc.vpc_id
-  ecs_sg             = module.ecs.ecs_sg
+  source              = "../../modules/rds"
+  private_subnet_ids  = module.vpc.private_subnet_ids
+  vpc_id              = module.vpc.vpc_id
+  ecs_sg              = module.ecs.ecs_sg
+  skip_final_snapshot = var.skip_final_snapshot
+  environment         = var.environment
+  multi_az            = var.multi_az
+  instance_class      = var.instance_class
 }
 
 module "sqs" {
-  source = "../../modules/sqs"
+  source                        = "../../modules/sqs"
+  sqs_message_retention_seconds = var.sqs_message_retention_seconds
+  sqs_max_receive_count         = var.sqs_message_retention_seconds
+  environment                   = var.environment
 }
 
 
@@ -72,7 +84,5 @@ module "observability" {
   vpc_id                      = module.vpc.vpc_id
   alb_sg                      = module.alb.alb_sg
   monitoring_instance_profile = module.iam.monitoring_instance_profile
-
-
 
 }

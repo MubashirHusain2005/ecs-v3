@@ -7,7 +7,7 @@ resource "aws_lb" "alb" {
   enable_deletion_protection = false
 
   tags = {
-    Name = "alb"
+    Name = "${var.environment}-alb"
   }
 }
 
@@ -68,12 +68,12 @@ resource "aws_lb_target_group" "api_gateway" {
   }
 
   tags = {
-    Name = "api-gateway-tg"
+    Name = "${var.environment}-api-gateway-tg"
   }
 }
 
 resource "aws_lb_listener_rule" "api_gateway" {
-  listener_arn = aws_lb_listener.https.arn # your existing HTTPS listener
+  listener_arn = aws_lb_listener.https.arn # 
   priority     = 100
 
   action {
@@ -83,7 +83,7 @@ resource "aws_lb_listener_rule" "api_gateway" {
 
   condition {
     path_pattern {
-      values = ["/api*", "/auth/*", "/healthz"] # adjust if the gateway shares the ALB with other services
+      values = ["/api*", "/auth/*", "/healthz"]
     }
   }
 }
@@ -108,12 +108,12 @@ resource "aws_lb_target_group" "dashboard_api" {
   }
 
   tags = {
-    Name = "dashboard-api-tg"
+    Name = "${var.environment}-dashboard-api-tg"
   }
 }
 
 resource "aws_lb_listener_rule" "dashboard_api" {
-  listener_arn = aws_lb_listener.https.arn # your existing HTTPS listener
+  listener_arn = aws_lb_listener.https.arn
   priority     = 90
 
   action {
@@ -123,7 +123,7 @@ resource "aws_lb_listener_rule" "dashboard_api" {
 
   condition {
     path_pattern {
-      values = ["/", "/dashboard", "/dashboard/*", "/healthz"] # adjust if the gateway shares the ALB with other services
+      values = ["/", "/dashboard", "/dashboard/*", "/healthz"]
     }
   }
 }
@@ -161,27 +161,3 @@ resource "aws_security_group" "alb_sg" {
   }
 }
 
-#resource "aws_lb_target_group" "grafana" {
- # name        = "grafana-tg"
- # port        = 3000
- # protocol    = "HTTP"
- # vpc_id      = var.vpc_id
- # target_type = "instance"
-
- # health_check {
-   # path                = "/api/health"
-  #  port                = "3000"
-  #  protocol            = "HTTP"
-  #  healthy_threshold   = 2
-   # unhealthy_threshold = 3
-   # interval            = 30
-   # timeout             = 5
-   # matcher             = "200"
- # }
-#}
-
-#resource "aws_lb_target_group_attachment" "grafana" {
- # target_group_arn = aws_lb_target_group.grafana.arn
- # target_id        = var.grafana_instance_id
- # port              = 3000
-#}

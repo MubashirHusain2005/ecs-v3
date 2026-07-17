@@ -3,7 +3,7 @@ variable "public_subnet_ids" {
 }
 
 variable "vpc_id" {
-    type = string
+  type = string
 }
 
 variable "public_key" {

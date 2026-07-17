@@ -229,7 +229,7 @@ resource "aws_iam_policy" "oidc_access_aws" {
       },
 
       {
-        Sid = "ECR"
+        Sid    = "ECR"
         Effect = "Allow"
         Action = [
           "ecr:GetAuthorizationToken",
@@ -239,7 +239,8 @@ resource "aws_iam_policy" "oidc_access_aws" {
           "ecr:InitiateLayerUpload",
           "ecr:UploadLayerPart",
           "ecr:CompleteLayerUpload",
-          "ecr:PutImage"
+          "ecr:PutImage",
+          "ecr:DescribeImages"
         ],
         Resource = "*"
       },
@@ -280,6 +281,16 @@ resource "aws_iam_policy" "oidc_access_aws" {
         Resource = "*"
       },
 
+      {
+        Sid = "SQS"
+        Effect = "Allow"
+        Action = [
+          "sqs:RecieveMessage",
+          "sqs:DeleteMessage",
+          "sqs:receivemessage"
+        ]
+        Resource = "*"
+      },
 
       {
         Sid    = "ElasticLoadBalancing"

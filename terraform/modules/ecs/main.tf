@@ -13,19 +13,18 @@ data "aws_secretsmanager_secret" "api_gateway_secret" {
 resource "aws_ecs_cluster" "ecsv3_cluster" {
   name = "ecs-cluster"
 
-    setting {
-        name = "containerInsights"
-        value =  "enabled"
-     }
+  setting {
+    name  = "containerInsights"
+    value = "enabled"
+  }
 
-     configuration {
-      execute_command_configuration {
-        #kms_key_id = data.aws_kms_key.kms_key.arn
-        logging = "DEFAULT"
-      }
-     }
+  configuration {
+    execute_command_configuration {
+      logging = "DEFAULT"
     }
-  
+  }
+}
+
 
 ###Security Group
 
@@ -53,40 +52,40 @@ resource "aws_security_group" "ecs" {
   }
 
   ingress {
-    from_port = 8086
-    to_port = 8086
-    protocol = "tcp"
-    self = true
+    from_port       = 8086
+    to_port         = 8086
+    protocol        = "tcp"
+    self            = true
     security_groups = [var.alb_sg]
   }
 
   ingress {
-    from_port = 8081
-    to_port = 8086
-    protocol = "tcp"
+    from_port       = 8080
+    to_port         = 8091
+    protocol        = "tcp"
     security_groups = [var.monitoring_sg]
   }
 
-   ingress {
+  ingress {
     from_port = 8081
-    to_port = 8086
-    protocol = "tcp"
-    self = true
+    to_port   = 8086
+    protocol  = "tcp"
+    self      = true
   }
 
 
   ingress {
     from_port = 9090
-    to_port = 9090
-    protocol = "tcp"
-    self = true
+    to_port   = 9090
+    protocol  = "tcp"
+    self      = true
   }
 
   ingress {
     from_port = 3000
-    to_port = 3000
-    protocol = "tcp"
-    self = true
+    to_port   = 3000
+    protocol  = "tcp"
+    self      = true
   }
 
   egress {
@@ -134,11 +133,7 @@ resource "aws_service_discovery_service" "api_gateway" {
     failure_threshold = 3
   }
 
- 
-
 }
-
-
 
 ##Api-gateway Task
 resource "aws_ecs_task_definition" "api_gateway_task" {
@@ -161,9 +156,9 @@ resource "aws_ecs_task_definition" "api_gateway_task" {
     {
 
       health_check = {
-        path = "/healthz"
+        path     = "/healthz"
         interval = 5
-        timeout = 5
+        timeout  = 5
       }
 
       name      = var.api_task_name
@@ -769,7 +764,7 @@ resource "aws_ecs_task_definition" "payment_task" {
   container_definitions = jsonencode([
     {
       name      = "payment-service"
-      image     = "125474112898.dkr.ecr.eu-west-2.amazonaws.com/payment_service:v1"
+      image     = var.payment_image
       essential = true
 
       portMappings = [

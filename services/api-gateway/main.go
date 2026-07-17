@@ -40,12 +40,12 @@ func main() {
 
 	// Service routes - internal service URLs
 	routes = map[string]string{
-		"/api/orders":        getEnv("ORDER_SERVICE_URL", "http://order-service.ecs.internal:8081"),
-		"/api/inventory":     getEnv("INVENTORY_SERVICE_URL", "http://inventory-service.ecs.internal:8082"),
-		"/api/payments":      getEnv("PAYMENT_SERVICE_URL", "http://payment-service.ecs.internal:8083"),
-		"/api/notifications": getEnv("NOTIFICATION_SERVICE_URL", "http://notification-service.ecs.internal:8084"),
-		"/api/shipping":      getEnv("SHIPPING_SERVICE_URL", "http://shipping-service.ecs.internal:8085"),
-		"/api/dashboard":     getEnv("DASHBOARD_SERVICE_URL", "http://dashboard-api.ecs.internal:8086"),
+		"/api/orders":        getEnv("ORDER_SERVICE_URL", "http://order-service.services.internal:8081"),
+		"/api/inventory":     getEnv("INVENTORY_SERVICE_URL", "http://inventory-service.services.internal:8082"),
+		"/api/payments":      getEnv("PAYMENT_SERVICE_URL", "http://payment-service.services.internal:8083"),
+		"/api/notifications": getEnv("NOTIFICATION_SERVICE_URL", "http://notification-service.services.internal:8084"),
+		"/api/shipping":      getEnv("SHIPPING_SERVICE_URL", "http://shipping-service.services.internal:8085"),
+		"/api/dashboard":     getEnv("DASHBOARD_SERVICE_URL", "http://dashboard-api.services.internal:8086"),
 	}
 
 	// Redis for rate limiting

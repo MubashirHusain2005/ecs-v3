@@ -14,15 +14,16 @@ data "aws_ami" "ubuntu" {
   }
 }
 
-resource "aws_instance" "monitoring" {
-    ami = data.aws_ami.ubuntu.id
-    instance_type = "t3.micro"
-    subnet_id = var.public_subnet_ids[0]
-    vpc_security_group_ids = [aws_security_group.monitoring_sg.id]
-    key_name = aws_key_pair.deployer.key_name
-    iam_instance_profile = var.monitoring_instance_profile
 
-     user_data = templatefile("${path.module}/user-data.sh", {
+resource "aws_instance" "prometheus" {
+  ami                    = data.aws_ami.ubuntu.id
+  instance_type          = "t3.micro"
+  subnet_id              = var.public_subnet_ids[0]
+  vpc_security_group_ids = [aws_security_group.monitoring_sg.id]
+  key_name               = aws_key_pair.deployer.key_name
+  iam_instance_profile   = var.monitoring_instance_profile
+
+  user_data = templatefile("${path.module}/prometheus.sh", {
   })
 
   timeouts {
@@ -30,7 +31,28 @@ resource "aws_instance" "monitoring" {
   }
 
   tags = {
-    Name = "monitoring-node"
+    Name = "prometheus-node"
+  }
+}
+
+
+resource "aws_instance" "grafana" {
+  ami                    = data.aws_ami.ubuntu.id
+  instance_type          = "t3.micro"
+  subnet_id              = var.public_subnet_ids[0]
+  vpc_security_group_ids = [aws_security_group.monitoring_sg.id]
+  key_name               = aws_key_pair.deployer.key_name
+  iam_instance_profile   = var.monitoring_instance_profile
+
+  user_data = templatefile("${path.module}/grafana.sh", {
+  })
+
+  timeouts {
+    create = "2m"
+  }
+
+  tags = {
+    Name = "grafana-node"
   }
 }
 
@@ -48,9 +70,9 @@ resource "aws_security_group" "monitoring_sg" {
   }
 
   ingress {
-    from_port = 443
-    to_port = 443
-    protocol = "tcp"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
@@ -71,9 +93,9 @@ resource "aws_security_group" "monitoring_sg" {
   }
 
   ingress {
-    from_port = 80
-    to_port = 80
-    protocol = "tcp"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 

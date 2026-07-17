@@ -6,13 +6,17 @@ resource "aws_elasticache_subnet_group" "redis" {
 resource "aws_elasticache_cluster" "redis" {
   cluster_id           = "ecs-v3-redis"
   engine               = "redis"
-  node_type            = "cache.t3.micro"  
+  node_type            = "cache.t3.micro"
   num_cache_nodes      = 1
   parameter_group_name = "default.redis7"
   engine_version       = "7.0"
-  port                 = 6379 
+  port                 = 6379
   subnet_group_name    = aws_elasticache_subnet_group.redis.name
   security_group_ids   = [aws_security_group.elasticache_sg.id]
+
+  tags = {
+    Name = "${var.environment}-redis-cluster"
+  }
 }
 
 
@@ -23,11 +27,11 @@ resource "aws_security_group" "elasticache_sg" {
   vpc_id      = var.vpc_id
 
   ingress {
-    from_port = 6379
-    to_port   = 6379
-    protocol  = "tcp"
+    from_port       = 6379
+    to_port         = 6379
+    protocol        = "tcp"
     security_groups = [var.ecs_sg]
-    description = " access from app tier"
+    description     = " access from app tier"
   }
 
   egress {

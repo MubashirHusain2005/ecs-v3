@@ -31,21 +31,21 @@ resource "aws_security_group" "rds_sg" {
 
 resource "aws_db_instance" "PostgreSQL_rds" {
 
-  db_subnet_group_name        = aws_db_subnet_group.dashboard_db.name
-  allocated_storage           = 10
-  db_name                     = "mydb"
-  max_allocated_storage =   100
-  engine                      = "postgres"
-  engine_version              = "18.4"
-  instance_class              = "db.t4g.large"
-  username                    = "db_owner"
-   password = random_password.db_password.result
-  publicly_accessible         = false
-  storage_encrypted           = true
+  db_subnet_group_name  = aws_db_subnet_group.dashboard_db.name
+  allocated_storage     = 10
+  db_name               = "mydb"
+  max_allocated_storage = 100
+  engine                = "postgres"
+  engine_version        = "18.4"
+  instance_class        = var.instance_class
+  username              = "db_owner"
+  password              = random_password.db_password.result
+  publicly_accessible   = false
+  storage_encrypted     = true
 
-  skip_final_snapshot       = true ##ideally false on prod environments
+  skip_final_snapshot       = var.skip_final_snapshot ##ideally false on prod environments
   final_snapshot_identifier = "rds-final-snapshot"
-  multi_az                  = false
+  multi_az                  = var.multi_az #false in dev
 
   vpc_security_group_ids = [aws_security_group.rds_sg.id]
 
@@ -59,7 +59,7 @@ resource "random_password" "db_password" {
 }
 
 resource "aws_secretsmanager_secret" "db" {
-  name = "rds-credentials"
+  name = "${var.environment}-rds-credentials"
 }
 
 resource "aws_secretsmanager_secret_version" "db" {

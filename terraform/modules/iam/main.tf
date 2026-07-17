@@ -95,9 +95,9 @@ resource "aws_iam_role_policy" "ecs_task_policies" {
         "secretsmanager:DescribeSecret",
         "secretsmanager:BatchGetSecretValue",
         "secretsmanager:ListSecrets",
-        "sqs:SendMessage",
         "sqs:RecieveMessage",
         "sqs:DeleteMessage",
+        "sqs:receivemessage"
       ]
       Resource = "*"
     }]
@@ -187,71 +187,71 @@ resource "aws_iam_role" "monitoring_role" {
   })
 }
 
-# iam policy for prometheus to pull metrics from cloud watch 
+# iam policy for prometheus to pull metrics from cloud watch to display on grafana
 resource "aws_iam_role_policy_attachment" "cw_read" {
   role       = aws_iam_role.monitoring_role.id
   policy_arn = "arn:aws:iam::aws:policy/CloudWatchFullAccessV2"
 }
 
 resource "aws_iam_role_policy_attachment" "ecs_full_access" {
-  role = aws_iam_role.monitoring_role.id
+  role       = aws_iam_role.monitoring_role.id
   policy_arn = "arn:aws:iam::aws:policy/AmazonECS_FullAccess"
 }
 
 
 #resource "aws_iam_policy" "yace_policy" {
- # name = "yace-cloudwatch-policy"
+# name = "yace-cloudwatch-policy"
 
-  #policy = jsonencode({
-   # Version = "2012-10-17"
-   # Statement = [
-   #   {
-    #    Effect = "Allow"
-     #   Action = [
-      #    "cloudwatch:GetMetricData",
-       #   "cloudwatch:ListMetrics"
-    #    ]
-    #    Resource = "*"
-   #   },
-    #  {
-    #    Effect = "Allow"
-     #   Action = [
-      #    "ecs:ListClusters",
-       #   "ecs:ListServices",
-        #  "ecs:DescribeServices"
-     #   ]
-     #   Resource = "*"
-    #  },
-    #  {
-     #   Effect = "Allow"
-      #  Action = [
-      #    "elasticloadbalancing:DescribeLoadBalancers",
-      #    "elasticloadbalancing:DescribeTargetGroups",
-       #   "elasticloadbalancing:DescribeTags"
-     #   ]
-     #   Resource = "*"
-    #  },
-    #  {
-     #   Effect = "Allow"
-     #   Action = [
-      #    "tag:GetResources"
-     #   ]
-     #   Resource = "*"
-    #  },
-    #  {
-     #   Effect = "Allow"
-     #   Action = [
-     #     "iam:ListAccountAliases"
-      #  ]
-     #   Resource = "*"
-    #  }
-   # ]
- # })
+#policy = jsonencode({
+# Version = "2012-10-17"
+# Statement = [
+#   {
+#    Effect = "Allow"
+#   Action = [
+#    "cloudwatch:GetMetricData",
+#   "cloudwatch:ListMetrics"
+#    ]
+#    Resource = "*"
+#   },
+#  {
+#    Effect = "Allow"
+#   Action = [
+#    "ecs:ListClusters",
+#   "ecs:ListServices",
+#  "ecs:DescribeServices"
+#   ]
+#   Resource = "*"
+#  },
+#  {
+#   Effect = "Allow"
+#  Action = [
+#    "elasticloadbalancing:DescribeLoadBalancers",
+#    "elasticloadbalancing:DescribeTargetGroups",
+#   "elasticloadbalancing:DescribeTags"
+#   ]
+#   Resource = "*"
+#  },
+#  {
+#   Effect = "Allow"
+#   Action = [
+#    "tag:GetResources"
+#   ]
+#   Resource = "*"
+#  },
+#  {
+#   Effect = "Allow"
+#   Action = [
+#     "iam:ListAccountAliases"
+#  ]
+#   Resource = "*"
+#  }
+# ]
+# })
 #}
 
 #resource "aws_iam_role_policy_attachment" "yace_attach" {
- # role       = aws_iam_role.monitoring_role.name
- # policy_arn = aws_iam_policy.yace_policy.arn
+# role       = aws_iam_role.monitoring_role.name
+# policy_arn = aws_iam_policy.yace_policy.arn
 #}
 
 resource "aws_iam_instance_profile" "monitoring_profile" {

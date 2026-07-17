@@ -3,7 +3,7 @@ data "aws_route53_zone" "primary" {
 
 }
 
-# A record so I can map www.mubashir.site onto the ALB DNS
+# A record so I can map www.mubashir.site onto the ALB 
 resource "aws_route53_record" "MS" {
   zone_id = data.aws_route53_zone.primary.id
   name    = "www.${var.domain_name}"

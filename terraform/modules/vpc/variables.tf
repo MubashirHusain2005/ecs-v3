@@ -1,6 +1,5 @@
 variable "vpc_cidr" {
-  default = "10.0.0.0/16"
-  type    = string
+  type = string
 }
 
 variable "enable_host" {
@@ -60,3 +59,10 @@ variable "private_subnets" {
 }
 
 
+variable "environment" {
+  type = string
+}
+
+variable "retention_in_days" {
+  type = string
+}

@@ -9,3 +9,7 @@ variable "vpc_id" {
 variable "ecs_sg" {
   type = string
 }
+
+variable "environment" {
+  type = string
+}

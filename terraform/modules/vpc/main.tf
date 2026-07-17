@@ -11,7 +11,7 @@ resource "aws_vpc" "ecs_vpc" {
   enable_dns_support   = var.enable_support
 
   tags = {
-    Name = "Main-VPC"
+    Name = "${var.environment}-vpc"
   }
 }
 
@@ -116,7 +116,7 @@ resource "aws_flow_log" "cloud_watch" {
 
 resource "aws_cloudwatch_log_group" "cloud_watch_logs" {
   name              = "logs_for_cloudwatch"
-  retention_in_days = 7
+  retention_in_days = var.retention_in_days
   #kms_key_id        = data.aws_kms_key.kms_key.arn
 }
 

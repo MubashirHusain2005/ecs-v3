@@ -10,7 +10,7 @@ variable "container_port" {
 
 variable "api_gateway_container_port" {
   default = 8080
-  type = number
+  type    = number
 }
 
 
@@ -52,7 +52,7 @@ variable "retention_in_days" {
 
 variable "api_image" {
   type    = string
-  default = "125474112898.dkr.ecr.eu-west-2.amazonaws.com/api_gateway:v1"
+  default = "125474112898.dkr.ecr.eu-west-2.amazonaws.com/api-gateway:v1"
 }
 
 variable "protocol" {
@@ -95,42 +95,38 @@ variable "private_subnet_ids" {
 
 variable "dashboard-api_image" {
   type    = string
-  default = "125474112898.dkr.ecr.eu-west-2.amazonaws.com/dashboard_api:v1"
+  default = "125474112898.dkr.ecr.eu-west-2.amazonaws.com/dashboard-api:55b76d3aa322a494077ce098b812c9d874227e22"
 }
 
 variable "inventory_image" {
   type    = string
-  default = "125474112898.dkr.ecr.eu-west-2.amazonaws.com/inventory_service:v1"
+  default = "125474112898.dkr.ecr.eu-west-2.amazonaws.com/inventory-service:55b76d3aa322a494077ce098b812c9d874227e22"
 }
 
 variable "notification_image" {
   type    = string
-  default = "125474112898.dkr.ecr.eu-west-2.amazonaws.com/notification_service:v1"
+  default = "125474112898.dkr.ecr.eu-west-2.amazonaws.com/notification-service:55b76d3aa322a494077ce098b812c9d874227e22"
 }
 
 variable "order_image" {
   type    = string
-  default = "125474112898.dkr.ecr.eu-west-2.amazonaws.com/order_service:v1"
+  default = "125474112898.dkr.ecr.eu-west-2.amazonaws.com/order-service:v1"
 }
 
-variable "payment_image" {
-  type    = string
-  default = "125474112898.dkr.ecr.eu-west-2.amazonaws.com/payment_service:v1"
-}
 
 variable "scheduler_image" {
   type    = string
-  default = "125474112898.dkr.ecr.eu-west-2.amazonaws.com/scheduler_service:v1"
+  default = "125474112898.dkr.ecr.eu-west-2.amazonaws.com/scheduler:v1"
 }
 
 variable "shipping_image" {
   type    = string
-  default = "125474112898.dkr.ecr.eu-west-2.amazonaws.com/shipping_service:v1"
+  default = "125474112898.dkr.ecr.eu-west-2.amazonaws.com/shipping-service:v1"
 }
 
 variable "worker_image" {
   type    = string
-  default = "125474112898.dkr.ecr.eu-west-2.amazonaws.com/worker_service:v1"
+  default = "125474112898.dkr.ecr.eu-west-2.amazonaws.com/worker:55b76d3aa322a494077ce098b812c9d874227e22"
 }
 
 
@@ -170,4 +166,9 @@ variable "vpce_sg" {
 
 variable "monitoring_sg" {
   type = string
+}
+
+variable "payment_image" {
+  type    = string
+  default = "125474112898.dkr.ecr.eu-west-2.amazonaws.com/payment-service:55b76d3aa322a494077ce098b812c9d874227e22"
 }

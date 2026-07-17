@@ -12,7 +12,7 @@ resource "aws_sqs_queue" "main_queue" {
     maxReceiveCount     = 4
   })
   tags = {
-    Environment = "production"
+    Environment = "${var.environment}-production-sqs-queue"
   }
 }
 

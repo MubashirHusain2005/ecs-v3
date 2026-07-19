@@ -287,7 +287,8 @@ resource "aws_iam_policy" "oidc_iam_and_ecs" {
           "iam:CreateInstanceProfile",
           "iam:DeleteInstanceProfile",
           "iam:AddRoleToInstanceProfile",
-          "iam:RemoveRoleFromInstanceProfile"
+          "iam:RemoveRoleFromInstanceProfile",
+          "iam:PassRole"
         ]
         Resource = [
           "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/*",
@@ -381,7 +382,9 @@ resource "aws_iam_policy" "oidc_networking" {
           "ec2:DescribeAvailabilityZones",
           "ec2:DescribeNetworkInterfaces",
           "ec2:DescribeAccountAttributes",
-          "ec2:DescribeImages"
+          "ec2:DescribeImages",
+          "ec2:ImportKeyPair",
+          "ec2:CreateVpcEndpoint"
         ]
         Resource = "*"
       },
@@ -392,9 +395,11 @@ resource "aws_iam_policy" "oidc_networking" {
         Action = [
           "route53:ListHostedZones",
           "route53:GetHostedZone",
+          "route53:CreateHostedZone",
           "route53:ListResourceRecordSets",
           "route53:ChangeResourceRecordSets",
-          "route53:ListTagsForResource"
+          "route53:ListTagsForResource",
+          "acm:RequestCertificate"
         ]
         Resource = "*"
       },
@@ -419,7 +424,9 @@ resource "aws_iam_policy" "oidc_networking" {
           "elasticloadbalancing:ModifyListener",
           "elasticloadbalancing:DescribeListeners",
           "elasticloadbalancing:AddTags",
-          "elasticloadbalancing:DescribeTags"
+          "elasticloadbalancing:DescribeTags",
+          "elasticloadbalancing:DescribeLoadBalancerAttributes",
+          "elasticloadbalancing:DescribeTargetGroupAttributes"
         ]
         Resource = "*"
       }
@@ -452,7 +459,8 @@ resource "aws_iam_policy" "oidc_data_services" {
           "elasticache:DeleteCacheSubnetGroup",
           "elasticache:DescribeCacheSubnetGroups",
           "elasticache:TagResource",
-          "elasticache:ListTagsForResource"
+          "elasticache:ListTagsForResource",
+          "elasticache:CreateCacheCluster"
         ]
         Resource = "*"
       },
@@ -523,7 +531,8 @@ resource "aws_iam_policy" "oidc_data_services" {
           "sqs:ListQueues",
           "sqs:ReceiveMessage",
           "sqs:DeleteMessage",
-          "sqs:SendMessage"
+          "sqs:SendMessage",
+          "sqs:listqueuetags"
         ]
         Resource = "*"
       },

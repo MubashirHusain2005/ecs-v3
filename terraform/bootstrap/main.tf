@@ -303,7 +303,7 @@ resource "aws_iam_policy" "oidc_iam_and_ecs" {
         Resource = ["*"]
         Condition = {
           StringEquals = {
-            "iam:PassedToService" = "ecs-tasks.amazonaws.com"
+            "iam:PassedToService" = ["ecs-tasks.amazonaws.com", "ec2.amazonaws.com"]
           }
         }
       },
@@ -399,7 +399,8 @@ resource "aws_iam_policy" "oidc_networking" {
           "route53:ListResourceRecordSets",
           "route53:ChangeResourceRecordSets",
           "route53:ListTagsForResource",
-          "acm:RequestCertificate"
+          "acm:RequestCertificate",
+
         ]
         Resource = "*"
       },
@@ -426,7 +427,7 @@ resource "aws_iam_policy" "oidc_networking" {
           "elasticloadbalancing:AddTags",
           "elasticloadbalancing:DescribeTags",
           "elasticloadbalancing:DescribeLoadBalancerAttributes",
-          "elasticloadbalancing:DescribeTargetGroupAttributes"
+          "elasticloadbalancing:DescribeTargetGroupAttributes",
         ]
         Resource = "*"
       }
@@ -460,7 +461,9 @@ resource "aws_iam_policy" "oidc_data_services" {
           "elasticache:DescribeCacheSubnetGroups",
           "elasticache:TagResource",
           "elasticache:ListTagsForResource",
-          "elasticache:CreateCacheCluster"
+          "elasticache:CreateCacheCluster",
+          "elasticache:DeleteCacheCluster",
+          "elasticache:DescribeCacheClusters",
         ]
         Resource = "*"
       },
@@ -532,7 +535,7 @@ resource "aws_iam_policy" "oidc_data_services" {
           "sqs:ReceiveMessage",
           "sqs:DeleteMessage",
           "sqs:SendMessage",
-          "sqs:listqueuetags"
+          "sqs:ListQueueTags"
         ]
         Resource = "*"
       },

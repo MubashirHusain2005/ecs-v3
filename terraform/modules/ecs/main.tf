@@ -1,9 +1,3 @@
-##Add health checks to Microservices
-
-#data "aws_kms_key" "kms_key" {
- # key_id = "alias/kms-ecr"
-#}
-
 data "aws_secretsmanager_secret" "api_gateway_secret" {
   name = "JWT_SECRET"
 }
@@ -156,7 +150,7 @@ resource "aws_ecs_task_definition" "api_gateway_task" {
     {
 
       health_check = {
-        path     = "/healthz"
+        command = ["CMD-SHELL", "curl -f http://localhost:8080/healthz || exit 1"]
         interval = 5
         timeout  = 5
       }
@@ -214,6 +208,14 @@ resource "aws_ecs_service" "api_gateway_service" {
   launch_type      = var.launch_type
   platform_version = "LATEST"
 
+  deployment_minimum_healthy_percent = 100
+  deployment_maximum_percent = 200
+
+  deployment_circuit_breaker {
+    enable = true
+    rollback = true
+  }
+
   network_configuration {
     subnets          = var.private_subnet_ids
     security_groups  = [aws_security_group.ecs.id]
@@ -253,7 +255,7 @@ resource "aws_cloudwatch_log_group" "dashboard_api" {
 ##CloudMap Namespace Service
 
 resource "aws_service_discovery_service" "dashboard_api" {
-  name = "dashboard-gateway"
+  name = "dashboard-api"
 
   dns_config {
     namespace_id = aws_service_discovery_private_dns_namespace.private.id
@@ -334,6 +336,14 @@ resource "aws_ecs_service" "dashboard_api_service" {
   launch_type      = var.launch_type
   platform_version = "LATEST"
 
+  deployment_minimum_healthy_percent = 100
+  deployment_maximum_percent = 200
+
+  deployment_circuit_breaker {
+    enable = true
+    rollback = true
+  }
+
   network_configuration {
     subnets          = var.private_subnet_ids
     security_groups  = [aws_security_group.ecs.id]
@@ -348,7 +358,7 @@ resource "aws_ecs_service" "dashboard_api_service" {
 
   service_registries {
     registry_arn   = aws_service_discovery_service.dashboard_api.arn
-    container_name = "dashboard_api"
+    container_name = "dashboard-api"
 
   }
 
@@ -455,6 +465,14 @@ resource "aws_ecs_service" "inventory_service" {
   desired_count    = var.desired_count
   launch_type      = var.launch_type
   platform_version = "LATEST"
+
+  deployment_minimum_healthy_percent = 100
+  deployment_maximum_percent = 200
+
+  deployment_circuit_breaker {
+    enable = true
+    rollback = true
+  }
 
   network_configuration {
     subnets          = var.private_subnet_ids
@@ -570,6 +588,14 @@ resource "aws_ecs_service" "notification_service" {
   desired_count    = var.desired_count
   launch_type      = var.launch_type
   platform_version = "LATEST"
+
+  deployment_minimum_healthy_percent = 100
+  deployment_maximum_percent = 200
+
+  deployment_circuit_breaker {
+    enable = true
+    rollback = true
+  }
 
   network_configuration {
     subnets          = var.private_subnet_ids
@@ -692,6 +718,13 @@ resource "aws_ecs_service" "order_service" {
   launch_type      = var.launch_type
   platform_version = "LATEST"
 
+  deployment_minimum_healthy_percent = 100
+  deployment_maximum_percent = 200
+
+  deployment_circuit_breaker {
+    enable = true
+    rollback = true
+  }
   network_configuration {
     subnets          = var.private_subnet_ids
     security_groups  = [aws_security_group.ecs.id]
@@ -813,6 +846,14 @@ resource "aws_ecs_service" "payment_api_service" {
   launch_type      = var.launch_type
   platform_version = "LATEST"
 
+  deployment_minimum_healthy_percent = 100
+  deployment_maximum_percent = 200
+
+  deployment_circuit_breaker {
+    enable = true
+    rollback = true
+  }
+
   network_configuration {
     subnets          = var.private_subnet_ids
     security_groups  = [aws_security_group.ecs.id]
@@ -928,6 +969,13 @@ resource "aws_ecs_service" "scheduler_service" {
   launch_type      = var.launch_type
   platform_version = "LATEST"
 
+  deployment_minimum_healthy_percent = 100
+  deployment_maximum_percent = 200
+
+  deployment_circuit_breaker {
+    enable = true
+    rollback = true
+  }
   network_configuration {
     subnets          = var.private_subnet_ids
     security_groups  = [aws_security_group.ecs.id]
@@ -955,7 +1003,7 @@ resource "aws_cloudwatch_log_group" "shipping" {
   retention_in_days = 7
 
   tags = {
-    Name = "scheduler-logs"
+    Name = "shipping-logs"
   }
 }
 
@@ -1047,6 +1095,14 @@ resource "aws_ecs_service" "shipping_service" {
   desired_count    = var.desired_count
   launch_type      = var.launch_type
   platform_version = "LATEST"
+
+  deployment_minimum_healthy_percent = 100
+  deployment_maximum_percent = 200
+
+  deployment_circuit_breaker {
+    enable = true
+    rollback = true
+  }
 
   network_configuration {
     subnets          = var.private_subnet_ids
@@ -1168,6 +1224,14 @@ resource "aws_ecs_service" "worker_service" {
   desired_count    = var.desired_count
   launch_type      = var.launch_type
   platform_version = "LATEST"
+
+  deployment_minimum_healthy_percent = 100
+  deployment_maximum_percent = 200
+
+  deployment_circuit_breaker {
+    enable = true
+    rollback = true
+  }
 
   network_configuration {
     subnets          = var.private_subnet_ids

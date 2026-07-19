@@ -66,3 +66,7 @@ variable "environment" {
 variable "retention_in_days" {
   type = string
 }
+
+variable "vpc_sg" {
+  type = string
+}

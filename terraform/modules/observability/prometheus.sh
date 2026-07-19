@@ -1,8 +1,5 @@
-#######################
-
 #!/bin/bash
-set -euxo pipefail
-exec > /var/log/user-data.log 2>&1
+export DEBIAN_FRONTEND=noninteractive
 
 apt update -y
 apt install -y docker.io docker-compose git
@@ -14,9 +11,11 @@ mkdir -p /opt/observability
 cd /opt/observability
 
 cat <<EOF > docker-compose.yml
+
 version: "3"
 
 services:
+
   prometheus:
     image: prom/prometheus
     volumes:
@@ -30,9 +29,10 @@ services:
       - '--storage.tsdb.retention.time=30d'
 
   yace:
-    image: quay.io/prometheuscommunity/yet-another-cloudwatch-exporter:v0.62.1
+    image: quay.io/prometheuscommunity/yet-another-cloudwatch-exporter:latest
     container_name: yace
     restart: unless-stopped
+
     ports:
       - "5000:5000"
     command:
@@ -42,11 +42,15 @@ services:
     environment:
       AWS_REGION: eu-west-2
 
-volumes:
+volumes:  
   prometheus-data:
+
 EOF
 
+
+
 cat <<'EOF' > prometheus.yml
+
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
@@ -87,22 +91,27 @@ scrape_configs:
   - job_name: 'dashboard-api'
     static_configs:
       - targets: ['dashboard-api.services.internal:8086']
+  
+      
 EOF
 
 cat <<EOF > yace-config.yaml
+
 apiVersion: v1alpha1
 sts-region: eu-west-2
 discovery:
   jobs:
+    # ECS Cluster-level metrics
     - type: AWS/ECS
       regions: [eu-west-2]
       searchTags:
         - key: ClusterName
-          value: ecs-cluster
+          value: ecs-v3-cluster
       period: 60
       length: 300
       addCloudwatchTimestamp: false
       metrics:
+        # CPU Metrics
         - name: CPUUtilization
           statistics:
             - Average
@@ -110,6 +119,8 @@ discovery:
         - name: CPUReservation
           statistics:
             - Average
+        
+        # Memory Metrics
         - name: MemoryUtilization
           statistics:
             - Average
@@ -117,24 +128,29 @@ discovery:
         - name: MemoryReservation
           statistics:
             - Average
+        
+        # Task/Service Health Metrics (Critical!)
         - name: RunningTasksCount
           statistics:
             - Average
-            - Minimum
+            - Minimum  # Low minimum indicates tasks dying
         - name: DesiredTaskCount
           statistics:
             - Average
         - name: PendingTasksCount
           statistics:
             - Average
-            - Maximum
+            - Maximum  # High pending = placement issues
+        
+        # Service Deployment Metrics
         - name: DeploymentSuccessful
           statistics:
             - Average
         - name: DeploymentFailed
           statistics:
             - Sum
-
+    
+    # Service-level metrics (more granular)
     - type: AWS/ECS
       regions: [eu-west-2]
       dimensionNameRequirements:
@@ -142,7 +158,7 @@ discovery:
         - ClusterName
       searchTags:
         - key: ClusterName
-          value: ecs-cluster
+          value: ecs-v3-cluster
       period: 60
       length: 300
       metrics:
@@ -166,9 +182,11 @@ discovery:
         - name: TargetTracking
           statistics:
             - Average
+
 EOF
 
 cd /opt/observability
+
 sudo docker-compose up -d
 
-echo "Prometheus + YACE stack started successfully!"
+echo "Observability stack started successfully!"

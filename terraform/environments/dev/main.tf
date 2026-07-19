@@ -6,6 +6,7 @@ module "vpc" {
   vpc_cidr           = var.vpc_cidr
   environment        = var.environment
   retention_in_days  = var.retention_in_days
+  vpc_sg = var.vpc_sg
 }
 
 module "ecs" {

@@ -7,3 +7,4 @@ sqs_max_receive_count         = 2
 skip_final_snapshot           = true
 multi_az                      = false
 instance_class                = "db.t4g.medium"
+vpc_sg = ["0.0.0.0/0"]

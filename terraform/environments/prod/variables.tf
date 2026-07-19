@@ -34,3 +34,7 @@ variable "multi_az" {
 variable "instance_class" {
   type = string
 }
+
+variable "vpc_sg" {
+  type = string
+}

@@ -1,6 +1,6 @@
 resource "aws_db_subnet_group" "dashboard_db" {
   name       = "dashboard-db-subnet-group"
-  subnet_ids = var.private_subnet_ids # typically 2+ private subnets, different AZs
+  subnet_ids = var.private_subnet_ids 
 
   tags = {
     Name = "dashboard-db-subnet-group"

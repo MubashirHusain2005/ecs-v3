@@ -384,7 +384,14 @@ resource "aws_iam_policy" "oidc_networking" {
           "ec2:DescribeAccountAttributes",
           "ec2:DescribeImages",
           "ec2:ImportKeyPair",
-          "ec2:CreateVpcEndpoint"
+          "ec2:CreateVpcEndpoint",
+          "ec2:DescribeVpcEndpoints",
+          "ec2:DescribeKeyPairs",
+          "ec2:DescribeVpcEndpoints",
+          "ec2:DescribePrefixLists",
+          "ec2:DeleteVpcEndpoints",
+          "ec2:DeleteKeyPair",
+          "ec2:RunInstances"
         ]
         Resource = "*"
       },
@@ -400,6 +407,9 @@ resource "aws_iam_policy" "oidc_networking" {
           "route53:ChangeResourceRecordSets",
           "route53:ListTagsForResource",
           "acm:RequestCertificate",
+          "route53:GetChange",
+          "acm:AddTagsToCertificate",
+          "acm:DescribeCertificate"
 
         ]
         Resource = "*"
@@ -428,6 +438,8 @@ resource "aws_iam_policy" "oidc_networking" {
           "elasticloadbalancing:DescribeTags",
           "elasticloadbalancing:DescribeLoadBalancerAttributes",
           "elasticloadbalancing:DescribeTargetGroupAttributes",
+          "elasticloadbalancing:DescribeListenerAttributes"
+
         ]
         Resource = "*"
       }
@@ -464,6 +476,7 @@ resource "aws_iam_policy" "oidc_data_services" {
           "elasticache:CreateCacheCluster",
           "elasticache:DeleteCacheCluster",
           "elasticache:DescribeCacheClusters",
+          "elasticache:AddTagsToResource"
         ]
         Resource = "*"
       },
@@ -484,7 +497,8 @@ resource "aws_iam_policy" "oidc_data_services" {
           "servicediscovery:UpdateService",
           "servicediscovery:TagResource",
           "servicediscovery:DiscoverInstances",
-          "servicediscovery:GetInstancesHealthStatus"
+          "servicediscovery:GetInstancesHealthStatus",
+          "servicediscovery:ListTagsForResource"
         ]
         Resource = "*"
       },
